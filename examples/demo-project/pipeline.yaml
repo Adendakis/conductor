@@ -1,0 +1,16 @@
+# Pipeline definition for examples/demo-project
+pipeline:
+  name: "examples/demo-project"
+  phases:
+    - id: "phase_1"
+      name: "Phase 1"
+      scope: "global"
+      steps:
+        - id: "step_1"
+          name: "Example Step"
+          agent: "example_agent"
+          prompt: "prompts/example.md"
+          deliverables:
+            - path: "output/example_output.md"
+              type: "markdown"
+          hitl_after: true

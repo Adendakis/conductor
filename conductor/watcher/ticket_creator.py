@@ -1,0 +1,279 @@
+"""Dynamic ticket creator — creates scoped tickets when milestones complete."""
+
+import json
+import logging
+from pathlib import Path
+from typing import Optional
+
+from conductor.models.enums import TicketStatus, TicketType
+from conductor.models.phases import PhaseDefinition, StepDefinition
+from conductor.models.ticket import Ticket, TicketMetadata
+from conductor.tracker.backend import TrackerBackend
+
+logger = logging.getLogger(__name__)
+
+
+class DynamicTicketCreator:
+    """Creates scoped tickets when milestone phases complete.
+
+    Triggered by the watcher when a phase with `creates_next_phases` completes.
+    Reads the phase's deliverables to discover scope units (workpackages, domains, pods).
+    """
+
+    def __init__(self, working_directory: Path = Path(".")):
+        self.working_directory = working_directory
+
+    def create_scoped_tickets(
+        self,
+        completed_ticket: Ticket,
+        next_phases: list[PhaseDefinition],
+        tracker: TrackerBackend,
+    ) -> list[str]:
+        """Create tickets for the next phases based on scope.
+
+        Returns list of created ticket IDs.
+        """
+        created_ids: list[str] = []
+
+        for phase in next_phases:
+            if phase.execution_scope == "per_workpackage":
+                workpackages = self._discover_workpackages()
+                for wp_id in workpackages:
+                    ids = self._create_phase_tickets(
+                        phase, tracker, scope_id=wp_id, scope_type="workpackage"
+                    )
+                    created_ids.extend(ids)
+
+            elif phase.execution_scope == "per_domain":
+                domains = self._discover_domains()
+                for domain in domains:
+                    ids = self._create_phase_tickets(
+                        phase, tracker, scope_id=domain, scope_type="domain"
+                    )
+                    created_ids.extend(ids)
+
+            elif phase.execution_scope == "per_pod":
+                pods = self._discover_pods()
+                for pod_id in pods:
+                    ids = self._create_phase_tickets(
+                        phase, tracker, scope_id=pod_id, scope_type="pod"
+                    )
+                    created_ids.extend(ids)
+
+            else:  # global
+                ids = self._create_phase_tickets(
+                    phase, tracker, scope_id=None, scope_type="global"
+                )
+                created_ids.extend(ids)
+
+        return created_ids
+
+    def _create_phase_tickets(
+        self,
+        phase: PhaseDefinition,
+        tracker: TrackerBackend,
+        scope_id: Optional[str],
+        scope_type: str,
+    ) -> list[str]:
+        """Create tickets for each step in a phase."""
+        created_ids: list[str] = []
+        step_id_to_ticket_id: dict[str, str] = {}
+
+        for step in phase.steps:
+            # Skip steps that don't match scope conditions
+            if step.workpackage_type and scope_id:
+                wp_type = self._get_workpackage_type(scope_id)
+                if wp_type and wp_type != step.workpackage_type:
+                    continue
+
+            # Build ticket
+            ticket = self._build_ticket(step, phase, scope_id, scope_type)
+
+            # Resolve intra-phase dependencies to ticket IDs
+            blocked_by: list[str] = []
+            for dep_step_id in step.depends_on:
+                if dep_step_id in step_id_to_ticket_id:
+                    blocked_by.append(step_id_to_ticket_id[dep_step_id])
+            ticket.blocked_by = blocked_by
+
+            # Set initial status
+            if blocked_by:
+                ticket.status = TicketStatus.BACKLOG
+            else:
+                ticket.status = TicketStatus.READY
+
+            ticket_id = tracker.create_ticket(ticket)
+            step_id_to_ticket_id[step.step_id] = ticket_id
+            created_ids.append(ticket_id)
+
+            logger.info(f"Created ticket {ticket_id}: {ticket.title}")
+
+        return created_ids
+
+    def _build_ticket(
+        self,
+        step: StepDefinition,
+        phase: PhaseDefinition,
+        scope_id: Optional[str],
+        scope_type: str,
+    ) -> Ticket:
+        """Build a Ticket from a StepDefinition."""
+        # Resolve deliverable path templates
+        deliverable_paths = []
+        for d in step.expected_deliverables:
+            path = self._resolve_path_template(d.output_path, scope_id)
+            deliverable_paths.append(path)
+
+        # Resolve input dependency templates
+        input_deps = [
+            self._resolve_path_template(dep, scope_id)
+            for dep in step.input_dependencies
+        ]
+
+        # Build title with scope
+        scope_label = f" {scope_id}" if scope_id else ""
+        title = f"{step.display_name}{scope_label}"
+
+        # Determine ticket type
+        if step.is_reviewer:
+            ticket_type = TicketType.REVIEWER_STEP
+        else:
+            ticket_type = TicketType.TASK
+
+        # Build description
+        description = self._build_description(step, phase, scope_id)
+
+        metadata = TicketMetadata(
+            phase=phase.phase_id,
+            step=step.step_id,
+            workpackage=scope_id if scope_type == "workpackage" else None,
+            pod=scope_id if scope_type == "pod" else None,
+            agent_name=step.agent_name,
+            prompt_file=step.prompt_file,
+            deliverable_paths=deliverable_paths,
+            hitl_required=step.hitl_after,
+            rework_target_step=step.rework_target,
+            input_dependencies=input_deps,
+            max_iterations=step.max_review_iterations,
+        )
+
+        return Ticket(
+            title=title,
+            description=description,
+            ticket_type=ticket_type,
+            metadata=metadata,
+        )
+
+    def _build_description(
+        self,
+        step: StepDefinition,
+        phase: PhaseDefinition,
+        scope_id: Optional[str],
+    ) -> str:
+        """Build ticket description from step definition."""
+        parts = [
+            f"## Task: {step.display_name}",
+            "",
+            f"**Phase**: {phase.phase_id}",
+            f"**Step**: {step.step_id}",
+        ]
+        if scope_id:
+            parts.append(f"**Scope**: {scope_id}")
+        parts.extend([
+            f"**Agent**: {step.agent_name}",
+            f"**Prompt File**: {step.prompt_file}",
+            "",
+            "### Expected Deliverables",
+        ])
+        for d in step.expected_deliverables:
+            path = self._resolve_path_template(d.output_path, scope_id)
+            parts.append(f"- {path}")
+
+        if step.input_dependencies:
+            parts.extend(["", "### Input Dependencies"])
+            for dep in step.input_dependencies:
+                parts.append(f"- {self._resolve_path_template(dep, scope_id)}")
+
+        parts.extend([
+            "",
+            "### HITL Configuration",
+            f"- Review required: {'yes' if step.hitl_after else 'no'}",
+            f"- Max iterations: {step.max_review_iterations}",
+        ])
+
+        return "\n".join(parts)
+
+    def _resolve_path_template(
+        self, path: str, scope_id: Optional[str]
+    ) -> str:
+        """Replace {wp_id}, {pod_id}, {domain_name} in path templates."""
+        if not scope_id:
+            return path
+        result = path.replace("{wp_id}", scope_id or "")
+        result = result.replace("{pod_id}", scope_id or "")
+        result = result.replace("{domain_name}", scope_id or "")
+        result = result.replace("{workpackage_id}", scope_id or "")
+        return result
+
+    def _discover_workpackages(self) -> list[str]:
+        """Read Workpackage_Planning.json to get WP IDs."""
+        planning_path = (
+            self.working_directory
+            / "output/analysis/workpackages/Workpackage_Planning.json"
+        )
+        if not planning_path.exists():
+            logger.warning(f"Workpackage planning not found: {planning_path}")
+            return []
+
+        try:
+            data = json.loads(planning_path.read_text(encoding="utf-8"))
+            return [
+                f"WP-{item['workpackageId']:03d}"
+                for item in data.get("migrationSequence", [])
+            ]
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Error reading workpackage planning: {e}")
+            return []
+
+    def _discover_domains(self) -> list[str]:
+        """Discover domains from BRE v2 output directory."""
+        bre_path = self.working_directory / "input/legacy/atx/bre_v2_output"
+        if not bre_path.exists():
+            return []
+        return sorted([d.name for d in bre_path.iterdir() if d.is_dir()])
+
+    def _discover_pods(self) -> list[str]:
+        """Read Pod_Assignment.json to get pod IDs."""
+        pod_path = (
+            self.working_directory
+            / "output/analysis/workpackages/Pod_Assignment.json"
+        )
+        if not pod_path.exists():
+            logger.warning(f"Pod assignment not found: {pod_path}")
+            return []
+
+        try:
+            data = json.loads(pod_path.read_text(encoding="utf-8"))
+            return [pod["podId"] for pod in data.get("pods", [])]
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"Error reading pod assignment: {e}")
+            return []
+
+    def _get_workpackage_type(self, wp_id: str) -> Optional[str]:
+        """Get the type of a workpackage (flow, job, etc.)."""
+        planning_path = (
+            self.working_directory
+            / "output/analysis/workpackages/Workpackage_Planning.json"
+        )
+        if not planning_path.exists():
+            return None
+
+        try:
+            data = json.loads(planning_path.read_text(encoding="utf-8"))
+            for item in data.get("migrationSequence", []):
+                item_id = f"WP-{item['workpackageId']:03d}"
+                if item_id == wp_id:
+                    return item.get("type")
+        except (json.JSONDecodeError, KeyError):
+            pass
+        return None

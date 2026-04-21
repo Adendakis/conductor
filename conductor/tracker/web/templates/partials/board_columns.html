@@ -1,0 +1,51 @@
+{% set status_labels = {
+  "backlog": "Backlog",
+  "ready": "Ready",
+  "in_progress": "In Progress",
+  "awaiting_review": "Awaiting Review",
+  "approved": "Approved",
+  "rejected": "Rejected",
+  "done": "Done",
+  "failed": "Failed",
+  "paused": "Paused"
+} %}
+
+{% set visible_statuses = ["ready", "in_progress", "awaiting_review", "done", "failed", "backlog", "rejected", "paused"] %}
+
+{% for status in visible_statuses %}
+{% set tickets = columns.get(status, []) %}
+<div class="column">
+  <div class="column-header">
+    {{ status_labels.get(status, status) }}
+    <span class="count">{{ tickets|length }}</span>
+  </div>
+  <div class="column-body">
+    {% if tickets %}
+      {% for ticket in tickets %}
+      <div class="card status-{{ status }}" onclick="showTicket('{{ ticket.id }}')">
+        <div class="card-id">{{ ticket.id }}
+          <span style="float:right; color:var(--text-muted);">{{ ticket.updated_at[:16] if ticket.updated_at else '' }}</span>
+        </div>
+        <div class="card-title">{{ ticket.title }}</div>
+        <div class="card-meta">
+          {% if ticket.metadata.phase %}
+          <span class="tag">{{ ticket.metadata.phase }}</span>
+          {% endif %}
+          {% if ticket.metadata.workpackage %}
+          <span class="tag">{{ ticket.metadata.workpackage }}</span>
+          {% endif %}
+          {% if ticket.metadata.agent_name %}
+          <span class="tag">{{ ticket.metadata.agent_name[:20] }}</span>
+          {% endif %}
+          {% if ticket.metadata.iteration > 1 %}
+          <span class="tag">iter {{ ticket.metadata.iteration }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">No tickets</div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}

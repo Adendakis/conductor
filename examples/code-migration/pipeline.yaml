@@ -1,0 +1,81 @@
+# Code Migration Demo Pipeline
+# Demonstrates: progressive ticket creation, parallel WPs, HITL gates,
+# reviewer pattern, rejection + rework, auto-approve
+#
+# Run: conductor init && conductor serve --port 8080 && conductor watch-async
+
+pipeline:
+  name: "Code Migration Demo"
+  phases:
+    # Phase 1: Analysis (global — created at init)
+    - id: "phase_1"
+      name: "Legacy Analysis"
+      scope: "global"
+      creates_next_phases: ["phase_2"]
+      steps:
+        - id: "analyze_db"
+          name: "Analyze Database Schema"
+          agent: "demo_analyzer"
+          hitl_after: false
+          deliverables:
+            - path: "output/analysis/db_report.md"
+              type: "markdown"
+
+        - id: "analyze_code"
+          name: "Analyze Source Code"
+          agent: "demo_analyzer"
+          hitl_after: true
+          deliverables:
+            - path: "output/analysis/code_report.md"
+              type: "markdown"
+
+    # Phase 2: Planning (global — created when Phase 1 completes)
+    - id: "phase_2"
+      name: "Migration Planning"
+      scope: "global"
+      creates_next_phases: ["phase_3"]
+      steps:
+        - id: "define_workpackages"
+          name: "Define Workpackages"
+          agent: "demo_planner"
+          hitl_after: true
+          deliverables:
+            - path: "output/analysis/workpackages/Workpackage_Planning.json"
+              type: "json"
+
+    # Phase 3: Specification (per-workpackage — created when Phase 2 completes)
+    - id: "phase_3"
+      name: "Business Specification"
+      scope: "per_workpackage"
+      creates_next_phases: ["phase_4"]
+      steps:
+        - id: "extract_logic"
+          name: "Business Logic Extraction"
+          agent: "demo_specialist"
+          hitl_after: false
+          deliverables:
+            - path: "output/specs/{wp_id}/logic.md"
+              type: "markdown"
+
+        - id: "review_logic"
+          name: "Logic Review"
+          type: "reviewer_step"
+          agent: "demo_reviewer"
+          depends_on: ["extract_logic"]
+          hitl_after: true
+          deliverables:
+            - path: "output/specs/{wp_id}/review.md"
+              type: "markdown"
+
+    # Phase 4: Final (global — created when all Phase 3 WPs complete)
+    - id: "phase_4"
+      name: "Final Report"
+      scope: "global"
+      steps:
+        - id: "final_report"
+          name: "Generate Final Report"
+          agent: "demo_reporter"
+          hitl_after: true
+          deliverables:
+            - path: "output/final_report.md"
+              type: "markdown"

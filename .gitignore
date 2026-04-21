@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.kiro
+.vscode/
+*.swp
+*.swo
+*~
+
+# Conductor runtime state
+.conductor/tracker.db
+output/
+
+# Testing
+.pytest_cache/
+.hypothesis/
+htmlcov/
+.coverage
+*.cover
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp files
+temp/
+staging/
+
+# Kiro IDE
+.kiro/

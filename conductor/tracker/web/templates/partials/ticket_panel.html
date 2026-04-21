@@ -1,0 +1,101 @@
+<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-content">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h2>{{ ticket.id }} — {{ ticket.title }}</h2>
+      <button class="btn" onclick="closeModal()">✕</button>
+    </div>
+
+    <span class="badge badge-status">{{ ticket.status.value }}</span>
+    <span class="badge badge-status">{{ ticket.ticket_type.value }}</span>
+
+    <table class="meta-table">
+      <tr><td>Phase</td><td>{{ ticket.metadata.phase }}</td></tr>
+      <tr><td>Step</td><td>{{ ticket.metadata.step }}</td></tr>
+      <tr><td>Agent</td><td>{{ ticket.metadata.agent_name or '—' }}</td></tr>
+      <tr><td>Workpackage</td><td>{{ ticket.metadata.workpackage or '—' }}</td></tr>
+      <tr><td>Pod</td><td>{{ ticket.metadata.pod or '—' }}</td></tr>
+      <tr><td>Iteration</td><td>{{ ticket.metadata.iteration }} / {{ ticket.metadata.max_iterations }}</td></tr>
+      <tr><td>HITL Required</td><td>{{ 'Yes' if ticket.metadata.hitl_required else 'No' }}</td></tr>
+      <tr><td>Last Updated</td><td>{{ ticket.updated_at or ticket.created_at or '—' }}</td></tr>
+      <tr><td>Created</td><td>{{ ticket.created_at or '—' }}</td></tr>
+      <tr><td>Prompt File</td><td><code>{{ ticket.metadata.prompt_file or '—' }}</code></td></tr>
+      <tr><td>Blocked By</td><td>{{ ticket.blocked_by|join(', ') or 'None' }}</td></tr>
+      <tr><td>Blocks</td><td>{{ ticket.blocks|join(', ') or 'None' }}</td></tr>
+      {% if ticket.metadata.deliverable_paths %}
+      <tr><td>Deliverables</td><td>
+        {% for d in ticket.metadata.deliverable_paths %}
+        <div><code>{{ d }}</code></div>
+        {% endfor %}
+      </td></tr>
+      {% endif %}
+    </table>
+
+    <!-- Actions -->
+    <div class="actions">
+      {% if ticket.status.value == 'awaiting_review' %}
+      <button class="btn btn-success"
+              hx-post="/partials/ticket/{{ ticket.id }}/approve"
+              hx-target="#ticket-modal"
+              hx-swap="innerHTML">✓ Approve</button>
+      <button class="btn btn-danger" onclick="document.getElementById('reject-form-{{ ticket.id }}').style.display='block'">✗ Reject</button>
+      {% endif %}
+
+      {% if ticket.status.value in ['awaiting_review', 'in_progress', 'ready'] %}
+      <button class="btn btn-warning"
+              hx-post="/partials/ticket/{{ ticket.id }}/pause"
+              hx-target="#ticket-modal"
+              hx-swap="innerHTML">⏸ Pause</button>
+      {% endif %}
+
+      {% if ticket.status.value == 'paused' %}
+      <button class="btn btn-success"
+              hx-post="/partials/ticket/{{ ticket.id }}/resume"
+              hx-target="#ticket-modal"
+              hx-swap="innerHTML">▶ Resume</button>
+      {% endif %}
+
+      {% if ticket.status.value == 'failed' %}
+      <button class="btn"
+              hx-post="/partials/ticket/{{ ticket.id }}/retry"
+              hx-target="#ticket-modal"
+              hx-swap="innerHTML">↻ Retry</button>
+      {% endif %}
+
+      <button class="btn" onclick="refreshBoard()">↻ Refresh Board</button>
+    </div>
+
+    <!-- Reject form (hidden by default) -->
+    <div id="reject-form-{{ ticket.id }}" style="display:none; margin-top:12px;">
+      <form hx-post="/partials/ticket/{{ ticket.id }}/reject"
+            hx-target="#ticket-modal"
+            hx-swap="innerHTML"
+            hx-encoding="multipart/form-data">
+        <textarea name="comment" placeholder="Rejection feedback..."></textarea>
+        <button type="submit" class="btn btn-danger" style="margin-top:8px;">Submit Rejection</button>
+      </form>
+    </div>
+
+    <!-- Add comment -->
+    <div style="margin-top:16px;">
+      <form hx-post="/partials/ticket/{{ ticket.id }}/comment"
+            hx-target="#ticket-modal"
+            hx-swap="innerHTML"
+            hx-encoding="multipart/form-data">
+        <textarea name="comment" placeholder="Add a comment..."></textarea>
+        <button type="submit" class="btn" style="margin-top:8px;">Add Comment</button>
+      </form>
+    </div>
+
+    <!-- Comments -->
+    {% if ticket.comments %}
+    <div class="comments">
+      <h3 style="font-size:14px; margin-bottom:8px; color:var(--text-secondary);">
+        Comments ({{ ticket.comments|length }})
+      </h3>
+      {% for comment in ticket.comments|reverse %}
+      <div class="comment">{{ comment }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>

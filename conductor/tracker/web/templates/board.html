@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conductor — Board</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <div class="header">
+    <h1>⚡ Conductor</h1>
+    <div class="stats" hx-get="/api/stats" hx-trigger="load, every 30s" hx-swap="innerHTML">
+      Loading...
+    </div>
+  </div>
+
+  <div class="filters">
+    <span>Filter:</span>
+    <select id="filter-phase" onchange="refreshBoard()">
+      <option value="">All Phases</option>
+    </select>
+    <select id="filter-workpackage" onchange="refreshBoard()">
+      <option value="">All Workpackages</option>
+    </select>
+    <select id="filter-status" onchange="refreshBoard()">
+      <option value="">All Statuses</option>
+      <option value="backlog">Backlog</option>
+      <option value="ready">Ready</option>
+      <option value="in_progress">In Progress</option>
+      <option value="awaiting_review">Awaiting Review</option>
+      <option value="done">Done</option>
+      <option value="failed">Failed</option>
+      <option value="paused">Paused</option>
+    </select>
+    <button class="btn" onclick="clearFilters()">✕ Clear</button>
+    <button class="btn" onclick="refreshBoard()">↻ Refresh</button>
+  </div>
+
+  <div id="board-container" class="board"
+       hx-get="/partials/board" hx-trigger="load" hx-swap="innerHTML">
+    <div class="empty">Loading board...</div>
+  </div>
+
+  <!-- Ticket detail modal -->
+  <div id="ticket-modal"></div>
+
+  <script>
+    // Populate filter dropdowns on load
+    async function loadFilters() {
+      const resp = await fetch('/api/tickets');
+      const tickets = await resp.json();
+
+      const phases = [...new Set(tickets.map(t => t.metadata.phase).filter(Boolean))].sort();
+      const wps = [...new Set(tickets.map(t => t.metadata.workpackage).filter(Boolean))].sort();
+
+      const phaseSelect = document.getElementById('filter-phase');
+      phases.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        phaseSelect.appendChild(opt);
+      });
+
+      const wpSelect = document.getElementById('filter-workpackage');
+      wps.forEach(w => {
+        const opt = document.createElement('option');
+        opt.value = w;
+        opt.textContent = w;
+        wpSelect.appendChild(opt);
+      });
+    }
+    loadFilters();
+
+    function getFilterParams() {
+      const phase = document.getElementById('filter-phase').value;
+      const wp = document.getElementById('filter-workpackage').value;
+      const status = document.getElementById('filter-status').value;
+      const params = new URLSearchParams();
+      if (phase) params.set('phase', phase);
+      if (wp) params.set('workpackage', wp);
+      if (status) params.set('status', status);
+      return params.toString();
+    }
+
+    function refreshBoard() {
+      const params = getFilterParams();
+      const url = '/partials/board' + (params ? '?' + params : '');
+      htmx.ajax('GET', url, {target: '#board-container', swap: 'innerHTML'});
+    }
+
+    function clearFilters() {
+      document.getElementById('filter-phase').value = '';
+      document.getElementById('filter-workpackage').value = '';
+      document.getElementById('filter-status').value = '';
+      refreshBoard();
+    }
+
+    // Auto-reload board every 5 seconds (preserves filters)
+    let autoReloadInterval = setInterval(refreshBoard, 5000);
+
+    // Pause auto-reload when modal is open
+    function showTicket(ticketId) {
+      clearInterval(autoReloadInterval);
+      htmx.ajax('GET', '/partials/ticket/' + ticketId, {target: '#ticket-modal', swap: 'innerHTML'});
+    }
+
+    function closeModal() {
+      document.getElementById('ticket-modal').innerHTML = '';
+      refreshBoard();
+      autoReloadInterval = setInterval(refreshBoard, 5000);
+    }
+
+    // Close modal on escape
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    // Auto-refresh stats
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+      if (e.target.classList.contains('stats')) {
+        try {
+          const data = JSON.parse(e.target.innerText);
+          e.target.innerHTML = `${data.total} tickets | ` +
+            Object.entries(data.by_status)
+              .filter(([k,v]) => v > 0)
+              .map(([k,v]) => `${k}: ${v}`)
+              .join(' · ');
+        } catch(err) {}
+      }
+    });
+  </script>
+</body>
+</html>

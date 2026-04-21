@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ ticket.id }} — Conductor</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <div class="header">
+    <h1><a href="/">⚡ Conductor</a> / {{ ticket.id }}</h1>
+  </div>
+
+  <div class="detail-panel">
+    <h2>{{ ticket.title }}</h2>
+    <span class="badge badge-status">{{ ticket.status.value }}</span>
+    <span class="badge badge-status">{{ ticket.ticket_type.value }}</span>
+
+    <table class="meta-table">
+      <tr><td>Phase</td><td>{{ ticket.metadata.phase }}</td></tr>
+      <tr><td>Step</td><td>{{ ticket.metadata.step }}</td></tr>
+      <tr><td>Agent</td><td>{{ ticket.metadata.agent_name or '—' }}</td></tr>
+      <tr><td>Workpackage</td><td>{{ ticket.metadata.workpackage or '—' }}</td></tr>
+      <tr><td>Iteration</td><td>{{ ticket.metadata.iteration }} / {{ ticket.metadata.max_iterations }}</td></tr>
+      <tr><td>HITL</td><td>{{ 'Yes' if ticket.metadata.hitl_required else 'No' }}</td></tr>
+      <tr><td>Blocked By</td><td>{{ ticket.blocked_by|join(', ') or 'None' }}</td></tr>
+      <tr><td>Blocks</td><td>{{ ticket.blocks|join(', ') or 'None' }}</td></tr>
+    </table>
+
+    {% if ticket.description %}
+    <div style="margin-top:16px; padding:12px; background:var(--bg-tertiary); border-radius:var(--radius); font-size:13px; white-space:pre-wrap;">{{ ticket.description }}</div>
+    {% endif %}
+
+    {% if ticket.comments %}
+    <div class="comments">
+      <h3 style="font-size:14px; margin:16px 0 8px; color:var(--text-secondary);">Comments</h3>
+      {% for comment in ticket.comments %}
+      <div class="comment">{{ comment }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</body>
+</html>

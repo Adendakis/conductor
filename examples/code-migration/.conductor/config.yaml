@@ -1,0 +1,11 @@
+# Code Migration Demo — Conductor configuration
+agents_module: "agents"
+pipeline: "pipeline.yaml"
+
+tracker:
+  backend: "sqlite"
+
+settings:
+  poll_interval_seconds: 5
+  hitl_default: true
+  stale_ticket_threshold_seconds: 300
