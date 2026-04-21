@@ -2,7 +2,7 @@
 # Demonstrates: progressive ticket creation, parallel WPs, HITL gates,
 # reviewer pattern, rejection + rework, auto-approve
 #
-# Run: conductor init && conductor serve --port 8080 && conductor watch-async
+# Run: conductor init --reset && conductor serve --port 8080 && conductor watch-async
 
 pipeline:
   name: "Code Migration Demo"
@@ -16,6 +16,7 @@ pipeline:
         - id: "analyze_db"
           name: "Analyze Database Schema"
           agent: "demo_analyzer"
+          prompt: "agents/analyzer/prompts/analyze.md"
           hitl_after: false
           deliverables:
             - path: "output/analysis/db_report.md"
@@ -24,6 +25,7 @@ pipeline:
         - id: "analyze_code"
           name: "Analyze Source Code"
           agent: "demo_analyzer"
+          prompt: "agents/analyzer/prompts/analyze.md"
           hitl_after: true
           deliverables:
             - path: "output/analysis/code_report.md"
@@ -38,6 +40,7 @@ pipeline:
         - id: "define_workpackages"
           name: "Define Workpackages"
           agent: "demo_planner"
+          prompt: "agents/planner/prompts/plan.md"
           hitl_after: true
           deliverables:
             - path: "output/analysis/workpackages/Workpackage_Planning.json"
@@ -52,6 +55,7 @@ pipeline:
         - id: "extract_logic"
           name: "Business Logic Extraction"
           agent: "demo_specialist"
+          prompt: "agents/specialist/prompts/extract.md"
           hitl_after: false
           deliverables:
             - path: "output/specs/{wp_id}/logic.md"
@@ -61,6 +65,7 @@ pipeline:
           name: "Logic Review"
           type: "reviewer_step"
           agent: "demo_reviewer"
+          prompt: "agents/reviewer/prompts/review.md"
           depends_on: ["extract_logic"]
           hitl_after: true
           deliverables:
@@ -75,6 +80,7 @@ pipeline:
         - id: "final_report"
           name: "Generate Final Report"
           agent: "demo_reporter"
+          prompt: "agents/reporter/prompts/report.md"
           hitl_after: true
           deliverables:
             - path: "output/final_report.md"

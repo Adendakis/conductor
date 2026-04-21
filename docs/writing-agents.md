@@ -16,6 +16,37 @@ def register(registry: AgentRegistry):
 
 The `agent_name` property must match the `agent` field in `pipeline.yaml`.
 
+## Project Layout
+
+Each agent lives in its own directory with its prompts:
+
+```
+agents/
+├── analyzer/
+│   ├── __init__.py          ← exports AnalyzerAgent
+│   ├── agent.py             ← the executor class
+│   └── prompts/
+│       └── analyze.md       ← prompt template for this agent
+├── planner/
+│   ├── __init__.py
+│   ├── agent.py
+│   └── prompts/
+│       └── plan.md
+└── __init__.py              ← register() imports from each subpackage
+```
+
+This makes each agent self-contained — code + prompts in one directory.
+You can copy an agent directory to another project and it works.
+
+The `prompt` field in `pipeline.yaml` points to the agent's prompt file:
+
+```yaml
+steps:
+  - id: "analyze"
+    agent: "my_analyzer"
+    prompt: "agents/analyzer/prompts/analyze.md"
+```
+
 ## Executor Types
 
 ### ToolExecutor — Run a Script

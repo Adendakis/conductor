@@ -2,13 +2,11 @@
 
 from conductor.executor.registry import AgentRegistry
 
-from .demo_agents import (
-    DemoAnalyzerAgent,
-    DemoPlannerAgent,
-    DemoReporterAgent,
-    DemoReviewerAgent,
-    DemoSpecialistAgent,
-)
+from .analyzer import DemoAnalyzerAgent
+from .planner import DemoPlannerAgent
+from .specialist import DemoSpecialistAgent
+from .reviewer import DemoReviewerAgent
+from .reporter import DemoReporterAgent
 
 
 def register(registry: AgentRegistry):

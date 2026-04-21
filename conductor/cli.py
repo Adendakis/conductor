@@ -406,8 +406,7 @@ def new_project(name):
 
     # Create directory structure
     (project_dir / ".conductor").mkdir(parents=True)
-    (project_dir / "agents").mkdir()
-    (project_dir / "prompts").mkdir()
+    (project_dir / "agents" / "example" / "prompts").mkdir(parents=True)
     (project_dir / "output").mkdir()
 
     # .conductor/config.yaml
@@ -440,7 +439,7 @@ pipeline:
         - id: "step_1"
           name: "Example Step"
           agent: "example_agent"
-          prompt: "prompts/example.md"
+          prompt: "agents/example/prompts/task.md"
           deliverables:
             - path: "output/example_output.md"
               type: "markdown"
@@ -454,7 +453,7 @@ pipeline:
         '''"""Agent registration for this project."""
 
 from conductor.executor.registry import AgentRegistry
-from .example_agent import ExampleAgent
+from .example import ExampleAgent
 
 
 def register(registry: AgentRegistry):
@@ -464,58 +463,72 @@ def register(registry: AgentRegistry):
         encoding="utf-8",
     )
 
-    # agents/example_agent.py
-    (project_dir / "agents" / "example_agent.py").write_text(
+    # agents/example/__init__.py
+    (project_dir / "agents" / "example" / "__init__.py").write_text(
+        'from .agent import ExampleAgent\n\n__all__ = ["ExampleAgent"]\n',
+        encoding="utf-8",
+    )
+
+    # agents/example/agent.py
+    (project_dir / "agents" / "example" / "agent.py").write_text(
         '''"""Example agent — replace with your own implementation."""
 
 from pathlib import Path
 
-from conductor.executor.base import ExecutionContext, ExecutionResult
-from conductor.executor.tool_executor import ToolExecutor
+from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
+from conductor.models.ticket import Ticket
 
 
-class ExampleAgent(ToolExecutor):
+class ExampleAgent(AgentExecutor):
     """Example agent that creates a placeholder deliverable.
 
-    Replace this with your actual agent logic:
-    - Subclass ToolExecutor for subprocess-based agents
-    - Subclass HybridExecutor for context-assembly + LLM agents
-    - Subclass LLMExecutor for autonomous agents with tool access
-    - Subclass ReviewerExecutor for quality review agents
+    Replace this with your actual agent logic. Each agent lives in its
+    own directory with its prompts:
+
+        agents/
+        ├── my_agent/
+        │   ├── __init__.py
+        │   ├── agent.py        ← your executor class
+        │   └── prompts/
+        │       └── task.md     ← prompt template
+
+    Executor types:
+    - AgentExecutor   — direct, do anything
+    - ToolExecutor    — run a subprocess
+    - HybridExecutor  — context assembly + single LLM call
+    - LLMExecutor     — autonomous agent with tool loop
+    - ReviewerExecutor — evaluate deliverables, return verdict
     """
 
     @property
     def agent_name(self) -> str:
         return "example_agent"
 
-    def build_command(self, ticket, context: ExecutionContext) -> tuple[str, str]:
-        """Build the command to execute.
+    def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
+        created = []
+        for path_str in ticket.metadata.deliverable_paths:
+            full_path = Path(context.working_directory) / path_str
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_text(
+                f"# {ticket.title}\\n\\n"
+                f"Output from example_agent.\\n\\n"
+                f"Ticket: {ticket.id}\\n"
+                f"Step: {ticket.metadata.step}\\n",
+                encoding="utf-8",
+            )
+            created.append(path_str)
 
-        For this example, we just echo a message.
-        Replace with your actual command.
-        """
-        output_path = "output/example_output.md"
-        if ticket.metadata.deliverable_paths:
-            output_path = ticket.metadata.deliverable_paths[0]
-
-        # Create the deliverable directly (simulating a tool)
-        full_path = Path(context.working_directory) / output_path
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        full_path.write_text(
-            f"# {ticket.title}\\n\\n"
-            f"Output from example_agent.\\n\\n"
-            f"Ticket: {ticket.id}\\n"
-            f"Step: {ticket.metadata.step}\\n",
-            encoding="utf-8",
+        return ExecutionResult(
+            success=True,
+            summary="Example agent completed",
+            deliverables_produced=created,
         )
-
-        return "echo done", str(context.working_directory)
 ''',
         encoding="utf-8",
     )
 
-    # prompts/example.md
-    (project_dir / "prompts" / "example.md").write_text(
+    # agents/example/prompts/task.md
+    (project_dir / "agents" / "example" / "prompts" / "task.md").write_text(
         """# Example Prompt
 
 This is a template prompt for the example agent.

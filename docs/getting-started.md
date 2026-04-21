@@ -25,8 +25,11 @@ my-pipeline/
 ├── pipeline.yaml             ← pipeline definition
 ├── agents/
 │   ├── __init__.py           ← agent registration
-│   └── example_agent.py      ← starter agent
-├── prompts/example.md        ← prompt template
+│   └── example/
+│       ├── __init__.py
+│       ├── agent.py          ← starter agent
+│       └── prompts/
+│           └── task.md       ← prompt template
 └── output/                   ← deliverables directory
 ```
 
