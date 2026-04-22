@@ -15,6 +15,9 @@ and git checkpointing — all visible on a real-time Kanban dashboard.
 # Install
 pip install -e .
 
+# With AWS Bedrock support (optional)
+pip install -e ".[bedrock]"
+
 # Create a new project
 conductor new-project my-pipeline
 cd my-pipeline
@@ -109,10 +112,19 @@ conductor/                    ← this repo
 │   └── agents/               ← Built-in generic executors
 ├── tests/                    ← 20 pytest tests
 ├── examples/
-│   ├── demo-project/         ← Minimal scaffold
-│   └── code-migration/       ← Full demo (5-min video recording)
+│   ├── demo-project/         ← Minimal scaffold + CAO boilerplate
+│   ├── code-migration/       ← Full demo: progressive phases, parallel WPs (5 min)
+│   └── daily-briefing/       ← AI demo: dynamic fan-out/fan-in with Bedrock LLM
 └── docs/                     ← Documentation
 ```
+
+## Examples
+
+| Example | What it demonstrates |
+|---------|---------------------|
+| [demo-project](examples/demo-project/) | Minimal scaffold + CAO integration boilerplate |
+| [code-migration](examples/code-migration/) | Progressive phases, parallel WPs, HITL gates, reviewer pattern |
+| [daily-briefing](examples/daily-briefing/) | Dynamic fan-out/fan-in, human input form, AI agents via Bedrock |
 
 ## Development
 

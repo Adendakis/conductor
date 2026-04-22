@@ -8,7 +8,13 @@ pip install -e .
 
 This installs the `conductor` CLI and Python library.
 
-**Dependencies**: Python 3.11+, pydantic, click, fastapi, uvicorn, boto3, jinja2.
+**Optional extras:**
+```bash
+pip install -e ".[bedrock]"    # AWS Bedrock LLM provider (adds boto3)
+pip install -e ".[dev]"        # pytest for running tests
+```
+
+**Core dependencies**: Python 3.11+, pydantic, click, fastapi, uvicorn, jinja2.
 
 ## Create Your First Project
 
@@ -74,4 +80,16 @@ conductor serve --port 8080    # in another terminal
 conductor watch-async          # in another terminal
 ```
 
-See [examples/code-migration/README.md](../examples/code-migration/README.md) for the full walkthrough.
+For an AI-powered example with dynamic fan-out and Bedrock LLM calls:
+
+```bash
+pip install -e ".[bedrock]"
+cd examples/daily-briefing
+conductor init --reset
+conductor serve --port 8080    # in another terminal
+conductor watch-async          # in another terminal
+# Then approve the setup ticket on the dashboard with your city + topic selections
+```
+
+See [examples/code-migration/README.md](../examples/code-migration/README.md) and
+[examples/daily-briefing/README.md](../examples/daily-briefing/README.md) for full walkthroughs.
