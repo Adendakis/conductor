@@ -13,6 +13,18 @@ parallel agents is determined at runtime by human input.
 
 ## Run the Demo
 
+### Prerequisites
+
+```bash
+# Install extra dependencies for this example
+pip install -r examples/daily-briefing/requirements.txt
+
+# Configure AWS credentials (for Bedrock LLM calls)
+export AWS_REGION=us-east-1
+# Optionally override the model:
+# export BRIEFING_MODEL_ID=anthropic.claude-haiku-3-20250310
+```
+
 ### Terminal 1: Initialize and start dashboard
 ```bash
 cd examples/daily-briefing
@@ -81,3 +93,14 @@ tickets at runtime. This enables:
   is built at runtime, not defined in pipeline.yaml
 - **Self-organizing workflow** — the pipeline YAML only defines the
   setup and dispatch phases; everything else is created dynamically
+
+## AI Integration
+
+Each topic agent calls AWS Bedrock (Claude) via a shared `llm_helper.py`.
+The LLM generates realistic content based on the city and topic.
+The reconciler uses the LLM to merge all topic outputs into a polished briefing.
+
+Dependencies are in `requirements.txt` — only this example needs them,
+not the conductor framework itself.
+
+To use a cheaper/faster model: `export BRIEFING_MODEL_ID=anthropic.claude-haiku-3-20250310`

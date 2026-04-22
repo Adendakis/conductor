@@ -1,9 +1,5 @@
-"""Sports agent — fetches sports updates.
+"""Sports agent — uses LLM to generate sports updates."""
 
-TODO: Replace with a real sports API or LLM with web search.
-"""
-
-import time
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
@@ -16,26 +12,42 @@ class SportsAgent(AgentExecutor):
         return "sports_agent"
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
-        time.sleep(5)
+        from agents.llm_helper import ask_llm
+
+        city = self._extract_city(ticket)
+
+        system = (
+            "You are a sports journalist. Provide concise sports updates "
+            "covering major leagues and events. Include scores where relevant. "
+            "Format in markdown."
+        )
+        user = (
+            f"Write a sports briefing relevant to someone in {city}. Include:\n\n"
+            f"1. Football/soccer (local league + Champions League/international)\n"
+            f"2. One other major sport popular in the region\n"
+            f"3. Any upcoming major sporting events\n\n"
+            f"Make it realistic. Keep each section to 2-3 sentences. "
+            f"Total under 200 words."
+        )
+
+        content = ask_llm(system, user, max_tokens=500)
+        content = f"# ⚽ Sports Update\n\n{content}\n"
 
         created = []
         for path_str in ticket.metadata.deliverable_paths:
             full_path = Path(context.working_directory) / path_str
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_text(
-                "# Sports Update\n\n"
-                "## Football\n"
-                "- Champions League: Quarter-final results in\n\n"
-                "## Tennis\n"
-                "- Roland Garros: Seeds advance to round 3\n\n"
-                "## Formula 1\n"
-                "- Next race: Monaco GP this weekend\n",
-                encoding="utf-8",
-            )
+            full_path.write_text(content, encoding="utf-8")
             created.append(path_str)
 
         return ExecutionResult(
             success=True,
-            summary="Sports update: football, tennis, F1",
+            summary="Sports update generated",
             deliverables_produced=created,
         )
+
+    def _extract_city(self, ticket: Ticket) -> str:
+        for line in ticket.description.splitlines():
+            if line.startswith("**City**:"):
+                return line.split(":", 1)[1].strip()
+        return "Unknown"

@@ -1,0 +1,3 @@
+# Daily Briefing — additional dependencies (beyond conductor)
+# Install: pip install -r requirements.txt
+boto3>=1.34.0

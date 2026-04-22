@@ -1,9 +1,5 @@
-"""Local news agent — fetches local news for a city.
+"""Local news agent — uses LLM to generate local news for a city."""
 
-TODO: Replace with a real news API or LLM with web search.
-"""
-
-import time
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
@@ -16,29 +12,43 @@ class LocalNewsAgent(AgentExecutor):
         return "local_news_agent"
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
-        time.sleep(6)
+        from agents.llm_helper import ask_llm
 
-        city = "Unknown"
-        for line in ticket.description.splitlines():
-            if line.startswith("**City**:"):
-                city = line.split(":", 1)[1].strip()
+        city = self._extract_city(ticket)
+
+        system = (
+            "You are a local news correspondent. Provide realistic, plausible "
+            "local news stories for the given city. Write in a professional "
+            "news briefing style. Format in markdown."
+        )
+        user = (
+            f"Write a local news briefing for {city} with 3-4 stories. Include:\n\n"
+            f"1. A city infrastructure or transport story\n"
+            f"2. A local business or economy story\n"
+            f"3. A community or cultural event\n"
+            f"4. (Optional) A local politics or policy story\n\n"
+            f"Make the stories realistic and relevant to {city}. "
+            f"Keep each story to 2-3 sentences. Total under 250 words."
+        )
+
+        content = ask_llm(system, user, max_tokens=600)
+        content = f"# 📍 Local News — {city}\n\n{content}\n"
 
         created = []
         for path_str in ticket.metadata.deliverable_paths:
             full_path = Path(context.working_directory) / path_str
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_text(
-                f"# Local News — {city}\n\n"
-                f"## Top Stories\n\n"
-                f"1. **New transit line approved** — City council votes to expand metro\n"
-                f"2. **Tech hub expansion** — 3 new startups open offices downtown\n"
-                f"3. **Weekend festival** — Annual food festival returns to the park\n",
-                encoding="utf-8",
-            )
+            full_path.write_text(content, encoding="utf-8")
             created.append(path_str)
 
         return ExecutionResult(
             success=True,
-            summary=f"Local news for {city}: 3 stories",
+            summary=f"Local news for {city}",
             deliverables_produced=created,
         )
+
+    def _extract_city(self, ticket: Ticket) -> str:
+        for line in ticket.description.splitlines():
+            if line.startswith("**City**:"):
+                return line.split(":", 1)[1].strip()
+        return "Unknown"

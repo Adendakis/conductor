@@ -1,10 +1,5 @@
-"""Weather agent — fetches weather for a city.
+"""Weather agent — uses LLM to generate a weather briefing for a city."""
 
-TODO: Replace with a real weather API call (OpenWeatherMap, etc.)
-or an LLM that has web access.
-"""
-
-import time
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
@@ -17,33 +12,43 @@ class WeatherAgent(AgentExecutor):
         return "weather_agent"
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
-        time.sleep(5)
+        from agents.llm_helper import ask_llm
 
-        # Extract city from ticket description
-        city = "Unknown"
-        for line in ticket.description.splitlines():
-            if line.startswith("**City**:"):
-                city = line.split(":", 1)[1].strip()
+        city = self._extract_city(ticket)
+
+        system = (
+            "You are a weather briefing assistant. Provide concise, accurate "
+            "weather information. Use emoji for visual clarity. "
+            "Format your response in markdown."
+        )
+        user = (
+            f"Provide a current weather briefing for {city}. Include:\n\n"
+            f"1. Current conditions (temperature, sky, wind, humidity)\n"
+            f"2. Today's high and low\n"
+            f"3. 3-day forecast summary\n"
+            f"4. Any weather alerts or advisories\n\n"
+            f"Use realistic data for {city} based on the current season. "
+            f"Keep it under 200 words."
+        )
+
+        content = ask_llm(system, user, max_tokens=500)
+        content = f"# ☁️ Weather — {city}\n\n{content}\n"
 
         created = []
         for path_str in ticket.metadata.deliverable_paths:
             full_path = Path(context.working_directory) / path_str
             full_path.parent.mkdir(parents=True, exist_ok=True)
-            full_path.write_text(
-                f"# Weather Report — {city}\n\n"
-                f"☀️ **Current**: 22°C, partly cloudy\n"
-                f"🌡️ **High/Low**: 25°C / 18°C\n"
-                f"💨 **Wind**: 12 km/h NW\n"
-                f"💧 **Humidity**: 45%\n\n"
-                f"## Forecast\n\n"
-                f"- Tomorrow: 24°C, sunny\n"
-                f"- Day after: 20°C, rain expected\n",
-                encoding="utf-8",
-            )
+            full_path.write_text(content, encoding="utf-8")
             created.append(path_str)
 
         return ExecutionResult(
             success=True,
-            summary=f"Weather report for {city}: 22°C, partly cloudy",
+            summary=f"Weather briefing for {city}",
             deliverables_produced=created,
         )
+
+    def _extract_city(self, ticket: Ticket) -> str:
+        for line in ticket.description.splitlines():
+            if line.startswith("**City**:"):
+                return line.split(":", 1)[1].strip()
+        return "Unknown"
