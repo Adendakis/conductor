@@ -91,7 +91,7 @@ def init(project, tracker, pipeline, all_phases, workpackages, reset):
 @click.option("--max-concurrent", type=int, default=3, help="Max concurrent agents")
 @click.option("--no-hitl", is_flag=True, help="Disable all HITL gates")
 @click.option("--log-level", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), default="INFO")
-@click.option("--log-file", type=str, default="", help="Log file path")
+@click.option("--log-file", type=str, default=".conductor/conductor.log", help="Log file path")
 @click.option("--log-json", is_flag=True, help="JSON console output")
 def watch(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json):
     """Start the event watcher."""
@@ -163,7 +163,7 @@ def watch(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json)
 @click.option("--max-concurrent", type=int, default=3, help="Max concurrent agents")
 @click.option("--no-hitl", is_flag=True, help="Disable all HITL gates")
 @click.option("--log-level", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), default="INFO")
-@click.option("--log-file", type=str, default="", help="Log file path")
+@click.option("--log-file", type=str, default=".conductor/conductor.log", help="Log file path")
 @click.option("--log-json", is_flag=True, help="JSON console output")
 def watch_async(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json):
     """Start the async event watcher (concurrent agent dispatch)."""

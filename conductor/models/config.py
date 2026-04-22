@@ -85,5 +85,5 @@ class WatcherConfig(BaseModel):
 
     # Logging
     log_level: str = "INFO"
-    log_file: str = ""  # Path to log file (empty = no file logging)
+    log_file: str = ".conductor/conductor.log"  # Path to log file
     log_json: bool = False  # JSON console output instead of human-readable
