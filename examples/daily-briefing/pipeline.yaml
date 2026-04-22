@@ -1,0 +1,37 @@
+# Daily Briefing Pipeline
+#
+# Demonstrates: dynamic fan-out/fan-in, human input form, runtime ticket creation
+#
+# Flow:
+# 1. Human fills out preferences (city + topic checkboxes)
+# 2. Dispatcher reads selections, creates 1-5 topic agent tickets + reconciliation ticket
+# 3. Topic agents run in parallel (weather, news, sports, finance)
+# 4. Reconciliation agent merges all results into a single briefing
+#
+# Run: conductor init --reset && conductor serve --port 8080 && conductor watch-async
+
+pipeline:
+  name: "Daily Briefing"
+  phases:
+    # Phase 1: Human input (created at init)
+    - id: "setup"
+      name: "Configure Briefing"
+      scope: "global"
+      creates_next_phases: ["dispatch"]
+      steps:
+        - id: "user_input"
+          name: "Configure your daily briefing"
+          agent: "__noop__"
+          hitl_after: true
+          deliverables: []
+
+    # Phase 2: Dispatcher (created when setup completes)
+    - id: "dispatch"
+      name: "Dispatch Agents"
+      scope: "global"
+      steps:
+        - id: "dispatch_agents"
+          name: "Dispatch topic agents"
+          agent: "briefing_dispatcher"
+          hitl_after: false
+          deliverables: []
