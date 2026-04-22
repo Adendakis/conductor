@@ -82,3 +82,8 @@ class WatcherConfig(BaseModel):
     git_enabled: bool = True
     git_tag_on_transitions: bool = True
     git_commit_on_completion: bool = True
+
+    # Logging
+    log_level: str = "INFO"
+    log_file: str = ""  # Path to log file (empty = no file logging)
+    log_json: bool = False  # JSON console output instead of human-readable

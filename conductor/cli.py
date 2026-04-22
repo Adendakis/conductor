@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 
 from conductor.models.config import ProjectConfig, WatcherConfig
+from conductor.observability.log_config import setup_logging
 
 
 @click.group()
@@ -89,8 +90,12 @@ def init(project, tracker, pipeline, all_phases, workpackages, reset):
 @click.option("--poll-interval", type=int, default=30, help="Poll interval in seconds")
 @click.option("--max-concurrent", type=int, default=3, help="Max concurrent agents")
 @click.option("--no-hitl", is_flag=True, help="Disable all HITL gates")
-def watch(poll_interval, max_concurrent, no_hitl):
+@click.option("--log-level", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), default="INFO")
+@click.option("--log-file", type=str, default="", help="Log file path")
+@click.option("--log-json", is_flag=True, help="JSON console output")
+def watch(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json):
     """Start the event watcher."""
+    setup_logging(level=log_level, log_file=log_file or None, json_console=log_json)
     from conductor.executor.registry import AgentRegistry
     from conductor.git.manager import GitManager
     from conductor.tracker.sqlite_backend import SqliteTracker
@@ -157,8 +162,12 @@ def watch(poll_interval, max_concurrent, no_hitl):
 @click.option("--poll-interval", type=int, default=30, help="Poll interval in seconds")
 @click.option("--max-concurrent", type=int, default=3, help="Max concurrent agents")
 @click.option("--no-hitl", is_flag=True, help="Disable all HITL gates")
-def watch_async(poll_interval, max_concurrent, no_hitl):
+@click.option("--log-level", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), default="INFO")
+@click.option("--log-file", type=str, default="", help="Log file path")
+@click.option("--log-json", is_flag=True, help="JSON console output")
+def watch_async(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json):
     """Start the async event watcher (concurrent agent dispatch)."""
+    setup_logging(level=log_level, log_file=log_file or None, json_console=log_json)
     from conductor.agents import build_default_registry
     from conductor.agents.generic import NoOpExecutor
     from conductor.executor.loader import load_agents_module

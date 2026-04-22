@@ -18,7 +18,7 @@ from conductor.tracker.backend import TrackerBackend
 from conductor.validation.validator import DeliverableValidator
 from conductor.watcher.dependency_resolver import all_blockers_resolved, unblock_dependents
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger("conductor.watcher")
 
 
 class AsyncEventWatcher:
@@ -51,8 +51,8 @@ class AsyncEventWatcher:
 
     def run(self) -> None:
         """Start the async event loop."""
-        print(
-            f"▶ Conductor Async Watcher started. "
+        log.info(
+            f"Conductor Async Watcher started. "
             f"Polling every {self.config.poll_interval_seconds}s, "
             f"max concurrent: {self.config.max_concurrent_agents}"
         )
@@ -67,12 +67,12 @@ class AsyncEventWatcher:
                 await self._poll_and_react()
                 await asyncio.sleep(self.config.poll_interval_seconds)
             except KeyboardInterrupt:
-                print("\n⏹ Watcher stopped.")
+                log.info("Watcher stopped.")
                 break
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in poll cycle: {e}")
+                log.error(f"Error in poll cycle: {e}")
                 await asyncio.sleep(self.config.poll_interval_seconds)
 
     async def _poll_and_react(self) -> None:
@@ -110,7 +110,7 @@ class AsyncEventWatcher:
             try:
                 # Transition to IN_PROGRESS
                 self.tracker.update_status(ticket.id, TicketStatus.IN_PROGRESS)
-                print(f"▶ Ticket {ticket.id} ({ticket.title}) → IN_PROGRESS")
+                log.info(f"Ticket {ticket.id} ({ticket.title}) → IN_PROGRESS")
 
                 # Git tag
                 if self.config.git_tag_on_transitions:
@@ -139,7 +139,7 @@ class AsyncEventWatcher:
                 except Exception as e:
                     self.tracker.update_status(ticket.id, TicketStatus.FAILED)
                     self.tracker.add_comment(ticket.id, f"Execution error: {e}")
-                    print(f"  ✗ Agent failed: {e}")
+                    log.error(f"Agent failed: {e}")
                     return
 
                 if result.success:
@@ -149,7 +149,7 @@ class AsyncEventWatcher:
                     self.tracker.add_comment(
                         ticket.id, f"Agent failed: {result.error or result.summary}"
                     )
-                    print(f"  ✗ Failed: {result.error or result.summary}")
+                    log.error(f"Failed: {result.error or result.summary}")
             finally:
                 self._in_flight.discard(ticket.id)
 
@@ -185,7 +185,7 @@ class AsyncEventWatcher:
 
         # Metrics
         if result.metrics:
-            print(f"  📊 {result.metrics.to_log_line()}")
+            log.info(f"{result.metrics.to_log_line()}")
 
         # Reviewer handling
         if isinstance(executor, ReviewerExecutor):
@@ -193,7 +193,7 @@ class AsyncEventWatcher:
             if review_result.approved:
                 if self._is_hitl_required(ticket):
                     self.tracker.update_status(ticket.id, TicketStatus.AWAITING_REVIEW)
-                    print(f"  → AWAITING_REVIEW")
+                    log.info(f"AWAITING_REVIEW")
                 else:
                     self._auto_approve(ticket)
             else:
@@ -203,7 +203,7 @@ class AsyncEventWatcher:
         # HITL decision
         if self._is_hitl_required(ticket):
             self.tracker.update_status(ticket.id, TicketStatus.AWAITING_REVIEW)
-            print(f"  → AWAITING_REVIEW")
+            log.info(f"AWAITING_REVIEW")
         else:
             self._auto_approve(ticket)
 
@@ -212,7 +212,7 @@ class AsyncEventWatcher:
         if self.config.git_tag_on_transitions:
             self.git.tag(f"conductor/{ticket.id}/approved")
         self.tracker.update_status(ticket.id, TicketStatus.DONE)
-        print(f"▶ {ticket.id} → DONE (approved)")
+        log.info(f"{ticket.id} → DONE (approved)")
         unblock_dependents(ticket, self.tracker)
         self._check_phase_completion(ticket)
 
@@ -232,7 +232,7 @@ class AsyncEventWatcher:
         ticket.metadata.iteration = iteration + 1
         self.tracker.update_metadata(ticket.id, ticket.metadata)
         self.tracker.update_status(ticket.id, TicketStatus.READY)
-        print(f"▶ {ticket.id} REJECTED → READY (iteration {iteration + 1})")
+        log.info(f"{ticket.id} REJECTED → READY (iteration {iteration + 1})")
 
     def _handle_reviewer_rejection(self, ticket, review_result) -> None:
         """Reviewer rejected — trigger rework."""
@@ -271,7 +271,7 @@ class AsyncEventWatcher:
         if self.config.git_tag_on_transitions:
             self.git.tag(f"conductor/{ticket.id}/approved")
         self.tracker.update_status(ticket.id, TicketStatus.DONE)
-        print(f"  → DONE (auto-approved)")
+        log.info(f"DONE (auto-approved)")
         unblock_dependents(ticket, self.tracker)
         self._check_phase_completion(ticket)
 
@@ -371,7 +371,7 @@ class AsyncEventWatcher:
         )
 
         if created_ids:
-            print(
-                f"  ✨ Phase '{phase_id}' complete → created {len(created_ids)} "
+            log.info(
+                f"Phase '{phase_id}' complete → created {len(created_ids)} "
                 f"tickets for {[p.phase_id for p in next_phases]}"
             )
