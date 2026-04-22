@@ -30,65 +30,13 @@
       {% endif %}
     </table>
 
-    <!-- Actions -->
-    <div class="actions">
-      {% if ticket.status.value == 'awaiting_review' %}
-      <button class="btn btn-success"
-              hx-post="/partials/ticket/{{ ticket.id }}/approve"
-              hx-target="#ticket-modal"
-              hx-swap="innerHTML">✓ Approve</button>
-      <button class="btn btn-danger" onclick="document.getElementById('reject-form-{{ ticket.id }}').style.display='block'">✗ Reject</button>
-      {% endif %}
+    {% if ticket.description %}
+    <div style="margin-top:16px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border); border-radius:var(--radius); font-size:13px; white-space:pre-wrap; line-height:1.6;">{{ ticket.description }}</div>
+    {% endif %}
 
-      {% if ticket.status.value in ['awaiting_review', 'in_progress', 'ready'] %}
-      <button class="btn btn-warning"
-              hx-post="/partials/ticket/{{ ticket.id }}/pause"
-              hx-target="#ticket-modal"
-              hx-swap="innerHTML">⏸ Pause</button>
-      {% endif %}
-
-      {% if ticket.status.value == 'paused' %}
-      <button class="btn btn-success"
-              hx-post="/partials/ticket/{{ ticket.id }}/resume"
-              hx-target="#ticket-modal"
-              hx-swap="innerHTML">▶ Resume</button>
-      {% endif %}
-
-      {% if ticket.status.value == 'failed' %}
-      <button class="btn"
-              hx-post="/partials/ticket/{{ ticket.id }}/retry"
-              hx-target="#ticket-modal"
-              hx-swap="innerHTML">↻ Retry</button>
-      {% endif %}
-
-      <button class="btn" onclick="refreshBoard()">↻ Refresh Board</button>
-    </div>
-
-    <!-- Reject form (hidden by default) -->
-    <div id="reject-form-{{ ticket.id }}" style="display:none; margin-top:12px;">
-      <form hx-post="/partials/ticket/{{ ticket.id }}/reject"
-            hx-target="#ticket-modal"
-            hx-swap="innerHTML"
-            hx-encoding="multipart/form-data">
-        <textarea name="comment" placeholder="Rejection feedback..."></textarea>
-        <button type="submit" class="btn btn-danger" style="margin-top:8px;">Submit Rejection</button>
-      </form>
-    </div>
-
-    <!-- Add comment -->
-    <div style="margin-top:16px;">
-      <form hx-post="/partials/ticket/{{ ticket.id }}/comment"
-            hx-target="#ticket-modal"
-            hx-swap="innerHTML"
-            hx-encoding="multipart/form-data">
-        <textarea name="comment" placeholder="Add a comment..."></textarea>
-        <button type="submit" class="btn" style="margin-top:8px;">Add Comment</button>
-      </form>
-    </div>
-
-    <!-- Comments -->
+    <!-- Comments (shown BEFORE actions so they're always visible) -->
     {% if ticket.comments %}
-    <div class="comments">
+    <div class="comments" style="margin-top:16px;">
       <h3 style="font-size:14px; margin-bottom:8px; color:var(--text-secondary);">
         Comments ({{ ticket.comments|length }})
       </h3>
@@ -97,5 +45,79 @@
       {% endfor %}
     </div>
     {% endif %}
+
+    <!-- Add comment -->
+    <div style="margin-top:16px;">
+      <form hx-post="/partials/ticket/{{ ticket.id }}/comment"
+            hx-target="#ticket-modal"
+            hx-swap="innerHTML"
+            hx-encoding="multipart/form-data">
+        <textarea name="comment" placeholder="Add a comment...">{% if ticket.status.value == 'awaiting_review' and ticket.metadata.step == 'user_input' and not ticket.comments %}city: Berlin, Germany
+[x] weather
+[x] local_news
+[ ] global_news
+[x] sports
+[ ] finance{% endif %}</textarea>
+        <button type="submit" class="btn" style="margin-top:8px;">Add Comment</button>
+      </form>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions" style="margin-top:16px;">
+      {% if ticket.status.value == 'awaiting_review' %}
+      <button class="btn btn-success" onclick="doApprove('{{ ticket.id }}')">✓ Approve</button>
+      <button class="btn btn-danger" onclick="doRejectPrompt('{{ ticket.id }}')">✗ Reject</button>
+      {% endif %}
+
+      {% if ticket.status.value in ['awaiting_review', 'in_progress', 'ready'] %}
+      <button class="btn btn-warning" onclick="doAction('/partials/ticket/{{ ticket.id }}/pause')">⏸ Pause</button>
+      {% endif %}
+
+      {% if ticket.status.value == 'paused' %}
+      <button class="btn btn-success" onclick="doAction('/partials/ticket/{{ ticket.id }}/resume')">▶ Resume</button>
+      {% endif %}
+
+      {% if ticket.status.value == 'failed' %}
+      <button class="btn" onclick="doAction('/partials/ticket/{{ ticket.id }}/retry')">↻ Retry</button>
+      {% endif %}
+
+      <button class="btn" onclick="refreshBoard()">↻ Refresh Board</button>
+    </div>
+
+    <!-- Reject form (hidden by default) -->
+    <script>
+      function doApprove(ticketId) {
+        var textarea = document.querySelector('textarea[name="comment"]');
+        var comment = textarea ? textarea.value.trim() : '';
+        var chain = Promise.resolve();
+        if (comment) {
+          var formData = new FormData();
+          formData.append('comment', comment);
+          chain = fetch('/partials/ticket/' + ticketId + '/comment', {method: 'POST', body: formData});
+        }
+        chain.then(function() {
+          return fetch('/partials/ticket/' + ticketId + '/approve', {method: 'POST'});
+        }).then(function() {
+          closeModal();
+          refreshBoard();
+        });
+      }
+      function doRejectPrompt(ticketId) {
+        var feedback = prompt('Rejection feedback:');
+        if (feedback === null) return;
+        var formData = new FormData();
+        formData.append('comment', feedback || 'Rejected');
+        fetch('/partials/ticket/' + ticketId + '/reject', {method: 'POST', body: formData}).then(function() {
+          closeModal();
+          refreshBoard();
+        });
+      }
+      function doAction(url) {
+        fetch(url, {method: 'POST'}).then(function() {
+          closeModal();
+          refreshBoard();
+        });
+      }
+    </script>
   </div>
 </div>

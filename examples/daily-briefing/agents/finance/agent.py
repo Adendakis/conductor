@@ -1,9 +1,11 @@
-"""Finance agent — uses LLM to generate market and finance updates."""
+"""Finance agent — searches for real market data, then summarizes with LLM."""
 
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
 from conductor.models.ticket import Ticket
+
+PROMPT_FILE = Path(__file__).parent / "prompts" / "finance.md"
 
 
 class FinanceAgent(AgentExecutor):
@@ -13,21 +15,20 @@ class FinanceAgent(AgentExecutor):
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
         from agents.llm_helper import ask_llm
+        from agents.web_search import search
 
         city = self._extract_city(ticket)
 
-        system = (
-            "You are a financial analyst. Provide a concise market briefing "
-            "with key indices, currencies, and notable moves. "
-            "Format in markdown with tables where appropriate."
+        search_results = search(
+            f"stock market today S&P 500 DAX EUR USD gold oil prices",
+            max_results=5,
         )
+
+        system = PROMPT_FILE.read_text(encoding="utf-8")
         user = (
-            f"Write a finance briefing relevant to someone in {city}. Include:\n\n"
-            f"1. Major stock indices (S&P 500, local exchange, Asian markets)\n"
-            f"2. Key currency pairs relevant to the region\n"
-            f"3. Commodities (oil, gold)\n"
-            f"4. One notable market story or trend\n\n"
-            f"Use realistic-sounding numbers. Keep under 200 words."
+            f"City: {city}\n\n"
+            f"## Search Results\n\n{search_results}\n\n"
+            f"Write the finance briefing based on these search results."
         )
 
         content = ask_llm(system, user, max_tokens=500)
@@ -42,7 +43,7 @@ class FinanceAgent(AgentExecutor):
 
         return ExecutionResult(
             success=True,
-            summary="Finance briefing generated",
+            summary="Finance briefing (from web search)",
             deliverables_produced=created,
         )
 

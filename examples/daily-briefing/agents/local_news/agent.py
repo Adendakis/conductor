@@ -1,9 +1,11 @@
-"""Local news agent — uses LLM to generate local news for a city."""
+"""Local news agent — searches for real local news, then summarizes with LLM."""
 
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
 from conductor.models.ticket import Ticket
+
+PROMPT_FILE = Path(__file__).parent / "prompts" / "local_news.md"
 
 
 class LocalNewsAgent(AgentExecutor):
@@ -13,22 +15,17 @@ class LocalNewsAgent(AgentExecutor):
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
         from agents.llm_helper import ask_llm
+        from agents.web_search import search
 
         city = self._extract_city(ticket)
 
-        system = (
-            "You are a local news correspondent. Provide realistic, plausible "
-            "local news stories for the given city. Write in a professional "
-            "news briefing style. Format in markdown."
-        )
+        search_results = search(f"{city} local news today", max_results=5)
+
+        system = PROMPT_FILE.read_text(encoding="utf-8")
         user = (
-            f"Write a local news briefing for {city} with 3-4 stories. Include:\n\n"
-            f"1. A city infrastructure or transport story\n"
-            f"2. A local business or economy story\n"
-            f"3. A community or cultural event\n"
-            f"4. (Optional) A local politics or policy story\n\n"
-            f"Make the stories realistic and relevant to {city}. "
-            f"Keep each story to 2-3 sentences. Total under 250 words."
+            f"City: {city}\n\n"
+            f"## Search Results\n\n{search_results}\n\n"
+            f"Write the local news briefing based on these search results."
         )
 
         content = ask_llm(system, user, max_tokens=600)
@@ -43,7 +40,7 @@ class LocalNewsAgent(AgentExecutor):
 
         return ExecutionResult(
             success=True,
-            summary=f"Local news for {city}",
+            summary=f"Local news for {city} (from web search)",
             deliverables_produced=created,
         )
 

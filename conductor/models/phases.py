@@ -29,6 +29,7 @@ class StepDefinition(BaseModel):
 
     step_id: str
     display_name: str = ""
+    description: str = ""  # Custom ticket description (overrides auto-generated)
     agent_name: str = ""
     prompt_file: str = ""
     expected_deliverables: list[DeliverableSpec] = Field(default_factory=list)

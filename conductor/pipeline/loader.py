@@ -80,6 +80,7 @@ def _parse_step(data: dict[str, Any]) -> StepDefinition:
     return StepDefinition(
         step_id=data.get("id", ""),
         display_name=data.get("name", ""),
+        description=data.get("description", ""),
         agent_name=data.get("agent", ""),
         prompt_file=data.get("prompt", ""),
         expected_deliverables=deliverables,

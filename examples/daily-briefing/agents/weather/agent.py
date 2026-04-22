@@ -1,9 +1,11 @@
-"""Weather agent — uses LLM to generate a weather briefing for a city."""
+"""Weather agent — searches for real weather data, then summarizes with LLM."""
 
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
 from conductor.models.ticket import Ticket
+
+PROMPT_FILE = Path(__file__).parent / "prompts" / "weather.md"
 
 
 class WeatherAgent(AgentExecutor):
@@ -13,27 +15,28 @@ class WeatherAgent(AgentExecutor):
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
         from agents.llm_helper import ask_llm
+        from agents.web_search import search
 
         city = self._extract_city(ticket)
 
-        system = (
-            "You are a weather briefing assistant. Provide concise, accurate "
-            "weather information. Use emoji for visual clarity. "
-            "Format your response in markdown."
-        )
+        # Step 1: Search for real weather data
+        search_results = search(f"weather today {city} forecast temperature", max_results=5)
+
+        # Step 2: Read the prompt template
+        prompt_template = PROMPT_FILE.read_text(encoding="utf-8")
+
+        # Step 3: LLM call with search results + prompt
+        system = prompt_template
         user = (
-            f"Provide a current weather briefing for {city}. Include:\n\n"
-            f"1. Current conditions (temperature, sky, wind, humidity)\n"
-            f"2. Today's high and low\n"
-            f"3. 3-day forecast summary\n"
-            f"4. Any weather alerts or advisories\n\n"
-            f"Use realistic data for {city} based on the current season. "
-            f"Keep it under 200 words."
+            f"City: {city}\n\n"
+            f"## Search Results\n\n{search_results}\n\n"
+            f"Write the weather briefing based on these search results."
         )
 
         content = ask_llm(system, user, max_tokens=500)
         content = f"# ☁️ Weather — {city}\n\n{content}\n"
 
+        # Step 4: Write deliverable
         created = []
         for path_str in ticket.metadata.deliverable_paths:
             full_path = Path(context.working_directory) / path_str
@@ -43,7 +46,7 @@ class WeatherAgent(AgentExecutor):
 
         return ExecutionResult(
             success=True,
-            summary=f"Weather briefing for {city}",
+            summary=f"Weather briefing for {city} (from web search)",
             deliverables_produced=created,
         )
 

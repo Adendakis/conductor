@@ -149,9 +149,9 @@ class BriefingDispatcher(AgentExecutor):
     def _parse_preferences(
         self, ticket: Ticket
     ) -> tuple[str, list[str]]:
-        """Parse city and selected topics from ticket comments.
+        """Parse city and selected topics from ticket description and comments.
 
-        Expected format in a comment:
+        Expected format (in description or comment):
             city: Berlin, Germany
             [x] weather
             [x] local_news
@@ -162,9 +162,11 @@ class BriefingDispatcher(AgentExecutor):
         city = "Unknown"
         selected: list[str] = []
 
-        # Search through all comments (latest first)
-        for comment in reversed(ticket.comments):
-            lines = comment.splitlines()
+        # Search description first, then comments (latest first)
+        texts_to_search = [ticket.description] + list(reversed(ticket.comments))
+
+        for text in texts_to_search:
+            lines = text.splitlines()
             for line in lines:
                 line = line.strip()
 
@@ -180,7 +182,7 @@ class BriefingDispatcher(AgentExecutor):
                     if topic in TOPIC_AGENTS and topic not in selected:
                         selected.append(topic)
 
-            # Stop after first comment that has selections
+            # Stop after first text that has selections
             if selected:
                 break
 

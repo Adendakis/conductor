@@ -1,9 +1,11 @@
-"""Sports agent — uses LLM to generate sports updates."""
+"""Sports agent — searches for real sports news, then summarizes with LLM."""
 
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
 from conductor.models.ticket import Ticket
+
+PROMPT_FILE = Path(__file__).parent / "prompts" / "sports.md"
 
 
 class SportsAgent(AgentExecutor):
@@ -13,21 +15,17 @@ class SportsAgent(AgentExecutor):
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
         from agents.llm_helper import ask_llm
+        from agents.web_search import search
 
         city = self._extract_city(ticket)
 
-        system = (
-            "You are a sports journalist. Provide concise sports updates "
-            "covering major leagues and events. Include scores where relevant. "
-            "Format in markdown."
-        )
+        search_results = search(f"sports news today {city} football scores", max_results=5)
+
+        system = PROMPT_FILE.read_text(encoding="utf-8")
         user = (
-            f"Write a sports briefing relevant to someone in {city}. Include:\n\n"
-            f"1. Football/soccer (local league + Champions League/international)\n"
-            f"2. One other major sport popular in the region\n"
-            f"3. Any upcoming major sporting events\n\n"
-            f"Make it realistic. Keep each section to 2-3 sentences. "
-            f"Total under 200 words."
+            f"City: {city}\n\n"
+            f"## Search Results\n\n{search_results}\n\n"
+            f"Write the sports briefing based on these search results."
         )
 
         content = ask_llm(system, user, max_tokens=500)
@@ -42,7 +40,7 @@ class SportsAgent(AgentExecutor):
 
         return ExecutionResult(
             success=True,
-            summary="Sports update generated",
+            summary="Sports update (from web search)",
             deliverables_produced=created,
         )
 

@@ -10,7 +10,7 @@
   "paused": "Paused"
 } %}
 
-{% set visible_statuses = ["ready", "in_progress", "awaiting_review", "done", "failed", "backlog", "rejected", "paused"] %}
+{% set visible_statuses = ["ready", "in_progress", "awaiting_review", "approved", "done", "failed", "backlog", "rejected", "paused"] %}
 
 {% for status in visible_statuses %}
 {% set tickets = columns.get(status, []) %}

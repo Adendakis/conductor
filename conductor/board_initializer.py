@@ -105,8 +105,8 @@ def _create_phase_tickets(
         else:
             ticket_type = TicketType.TASK
 
-        # Build description
-        description = _build_description(step, phase)
+        # Build description — use step.description if provided, else auto-generate
+        description = step.description.strip() if step.description else _build_description(step, phase)
 
         metadata = TicketMetadata(
             phase=phase.phase_id,

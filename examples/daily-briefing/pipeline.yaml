@@ -23,6 +23,7 @@ pipeline:
           name: "Configure your daily briefing"
           agent: "__noop__"
           hitl_after: true
+          description: "Edit your preferences below and click Approve. Your selections will be saved automatically."
           deliverables: []
 
     # Phase 2: Dispatcher (created when setup completes)

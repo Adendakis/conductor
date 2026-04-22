@@ -1,9 +1,11 @@
-"""Global news agent — uses LLM to generate world news headlines."""
+"""Global news agent — searches for real world news, then summarizes with LLM."""
 
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
 from conductor.models.ticket import Ticket
+
+PROMPT_FILE = Path(__file__).parent / "prompts" / "global_news.md"
 
 
 class GlobalNewsAgent(AgentExecutor):
@@ -13,21 +15,14 @@ class GlobalNewsAgent(AgentExecutor):
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
         from agents.llm_helper import ask_llm
+        from agents.web_search import search
 
-        system = (
-            "You are a global news editor. Provide a concise summary of "
-            "major world events. Write in a professional news briefing style. "
-            "Format in markdown with clear headlines."
-        )
+        search_results = search("world news today headlines", max_results=5)
+
+        system = PROMPT_FILE.read_text(encoding="utf-8")
         user = (
-            "Write a global news briefing with 4-5 major world stories. Cover:\n\n"
-            "1. Geopolitics or international relations\n"
-            "2. Economy or trade\n"
-            "3. Technology or science\n"
-            "4. Climate or environment\n"
-            "5. (Optional) Health or society\n\n"
-            "Make stories realistic and current-sounding. "
-            "Keep each to 2-3 sentences. Total under 250 words."
+            f"## Search Results\n\n{search_results}\n\n"
+            f"Write the global news briefing based on these search results."
         )
 
         content = ask_llm(system, user, max_tokens=600)
@@ -42,6 +37,6 @@ class GlobalNewsAgent(AgentExecutor):
 
         return ExecutionResult(
             success=True,
-            summary="Global news briefing generated",
+            summary="Global news briefing (from web search)",
             deliverables_produced=created,
         )

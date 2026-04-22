@@ -14,7 +14,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_MODEL_ID = os.environ.get("BRIEFING_MODEL_ID", "anthropic.claude-sonnet-4-20250514")
+_MODEL_ID = os.environ.get("BRIEFING_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
 _REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 

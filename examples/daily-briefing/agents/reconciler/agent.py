@@ -19,36 +19,30 @@ class ReconcilerAgent(AgentExecutor):
             if line.startswith("**City**:"):
                 city = line.split(":", 1)[1].strip()
 
-        # Gather all topic outputs
+        # Gather all topic outputs — use input_dependencies order (matches user's selection order)
         sections = []
-        topics_dir = Path(context.working_directory) / "output" / "topics"
-        if topics_dir.exists():
-            for topic_file in sorted(topics_dir.glob("*.md")):
-                sections.append(topic_file.read_text(encoding="utf-8"))
-
         for dep_path in ticket.metadata.input_dependencies:
             full_path = Path(context.working_directory) / dep_path
             if full_path.exists() and full_path.is_file():
-                content = full_path.read_text(encoding="utf-8")
-                if content not in sections:
-                    sections.append(content)
+                sections.append(full_path.read_text(encoding="utf-8"))
+
+        # Fall back to scanning the directory if no input_dependencies
+        if not sections:
+            topics_dir = Path(context.working_directory) / "output" / "topics"
+            if topics_dir.exists():
+                for topic_file in sorted(topics_dir.glob("*.md")):
+                    sections.append(topic_file.read_text(encoding="utf-8"))
 
         raw_content = "\n\n---\n\n".join(sections) if sections else "No topics available."
 
-        system = (
-            "You are an editorial assistant. Your job is to take multiple "
-            "topic briefings and merge them into a single, cohesive daily "
-            "briefing document. Maintain the key information from each section "
-            "but improve flow, remove redundancy, and add a brief executive "
-            "summary at the top. Format in clean markdown."
-        )
+        # Read prompt from file
+        prompt_file = Path(__file__).parent / "prompts" / "reconcile.md"
+        system = prompt_file.read_text(encoding="utf-8")
+
         user = (
-            f"Merge the following topic briefings into a single daily briefing "
-            f"for {city}. Add:\n\n"
-            f"1. A 2-3 sentence executive summary at the top\n"
-            f"2. Clean section headers for each topic\n"
-            f"3. A 'Key Takeaways' section at the end with 3-5 bullet points\n\n"
-            f"Here are the raw topic briefings:\n\n"
+            f"City: {city}\n"
+            f"Number of topics: {len(sections)}\n\n"
+            f"Here are the topic briefings to merge:\n\n"
             f"---\n\n{raw_content}"
         )
 
