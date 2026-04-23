@@ -104,10 +104,14 @@ class SqliteTracker(TrackerBackend):
 
     @property
     def _conn(self) -> sqlite3.Connection:
-        """Thread-local connection."""
+        """Get a connection. Creates a new one per thread.
+
+        Uses isolation_level=None (autocommit) to ensure reads always
+        see the latest data from other processes (watcher, CLI).
+        """
         if not hasattr(self._local, "conn") or self._local.conn is None:
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, isolation_level=None)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA foreign_keys=ON")
