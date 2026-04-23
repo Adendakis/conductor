@@ -44,14 +44,22 @@ def init(project, tracker, pipeline, all_phases, workpackages, reset):
     if config_path.exists() and not pipeline:
         try:
             import yaml
+        except ImportError:
+            click.echo("Error: PyYAML is required for pipeline.yaml loading. Install: pip install pyyaml")
+            return
+
+        try:
             cfg = yaml.safe_load(config_path.read_text())
             pipeline_file = cfg.get("pipeline", "")
             if pipeline_file:
                 pipeline_path = project_config.project_base_path / pipeline_file
                 if pipeline_path.exists():
                     pipeline_mode = f"yaml:{pipeline_path}"
-        except Exception:
-            pass
+                    click.echo(f"📄 Loading pipeline from {pipeline_file}")
+                else:
+                    click.echo(f"⚠ Pipeline file not found: {pipeline_file} — using built-in '{pipeline_mode}' pipeline")
+        except Exception as e:
+            click.echo(f"⚠ Error reading config: {e} — using built-in '{pipeline_mode}' pipeline")
 
     # Setup tracker
     if tracker == "sqlite":
@@ -220,12 +228,16 @@ def watch_async(poll_interval, max_concurrent, no_hitl, log_level, log_file, log
                 if pipeline_path.exists():
                     from conductor.pipeline.loader import load_pipeline_yaml
                     pipeline_phases = load_pipeline_yaml(pipeline_path)
+                    click.echo(f"📄 Watcher loaded pipeline from {pipeline_file}")
+                else:
+                    click.echo(f"⚠ Pipeline file not found: {pipeline_file}")
         except Exception as e:
-            click.echo(f"Warning: could not load pipeline: {e}")
+            click.echo(f"⚠ Could not load pipeline: {e}")
 
     if not pipeline_phases:
         from conductor.pipeline.builder import build_pipeline
         pipeline_phases = build_pipeline("full")
+        click.echo("⚠ Using built-in 'full' pipeline (no pipeline.yaml loaded)")
 
     watcher = AsyncEventWatcher(
         tracker=trk,
