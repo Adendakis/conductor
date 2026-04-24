@@ -5,22 +5,75 @@
 Located at `.conductor/config.yaml` in your project root.
 
 ```yaml
-# Agent module to import at startup
 agents_module: "agents"
-
-# Pipeline definition file
 pipeline: "pipeline.yaml"
 
-# Tracker backend
 tracker:
-  backend: "sqlite"              # only sqlite supported currently
+  backend: "sqlite"
 
-# Watcher settings
+# LLM Provider (optional)
+providers:
+  type: "bedrock"
+  region: "us-east-1"
+
 settings:
-  poll_interval_seconds: 30      # how often to check for ticket changes
-  hitl_default: true             # default: require human review
-  stale_ticket_threshold_seconds: 1800  # reset stuck tickets after 30 min
+  poll_interval_seconds: 30
+  hitl_default: true
+  stale_ticket_threshold_seconds: 1800
 ```
+
+## LLM Providers
+
+Conductor creates the LLM provider from config at watcher startup and passes
+it to all agents via `context.llm_provider`. Agents using `HybridExecutor` or
+`LLMExecutor` get the provider automatically.
+
+### Single Provider
+
+```yaml
+providers:
+  type: "bedrock"
+  region: "us-east-1"
+```
+
+Requires: `pip install conductor[bedrock]`
+
+### Provider Pool (multi-region failover)
+
+```yaml
+providers:
+  pool:
+    strategy: "fallback"       # try in order, next on failure
+    providers:
+      - type: "bedrock"
+        region: "us-east-1"
+        label: "primary"
+      - type: "bedrock"
+        region: "us-west-2"
+        label: "secondary"
+```
+
+Strategies: `fallback` (try in order) or `round_robin` (distribute evenly).
+
+### Per-Agent Provider Selection
+
+Agents can request a specific provider from the pool by overriding `get_model_config()`:
+
+```python
+def get_model_config(self):
+    from conductor.providers.base import ModelConfig
+    return ModelConfig(
+        model_id="anthropic.claude-haiku-3-20250310",
+        preferred_provider="secondary",  # label from pool config
+    )
+```
+
+The pool tries the preferred provider first, falls back to others if unavailable.
+
+### No Provider
+
+If `providers` is not set, `context.llm_provider` is `None`. Agents that need
+an LLM must create their own provider internally.
 
 ## WatcherConfig Fields
 
@@ -80,3 +133,25 @@ The dashboard auto-refreshes every 5 seconds. It pauses auto-refresh when a
 ticket detail modal is open and resumes when closed.
 
 Filters (phase, workpackage, status) are preserved during auto-refresh.
+
+## Logging
+
+Conductor logs to console (human-readable) and `.conductor/conductor.log` (JSON).
+
+```bash
+conductor watch-async --log-level DEBUG          # verbose console
+conductor watch-async --log-json                 # JSON console output
+conductor watch-async --log-file my.log          # custom log file path
+```
+
+All modules using `logging.getLogger(__name__)` inherit the config — including
+user agents. No setup needed in agent code:
+
+```python
+import logging
+log = logging.getLogger(__name__)
+
+class MyAgent(AgentExecutor):
+    def execute(self, ticket, context):
+        log.info(f"Processing {ticket.id}")
+```

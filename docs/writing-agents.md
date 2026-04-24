@@ -177,11 +177,15 @@ Every agent receives an `ExecutionContext` with:
 |-------|------|-------------|
 | `project_config` | ProjectConfig | Project settings |
 | `working_directory` | Path | Where to read/write files |
-| `llm_provider` | LLMProvider | For HybridExecutor/LLMExecutor |
+| `llm_provider` | LLMProvider or None | Configured from `.conductor/config.yaml` providers section |
 | `tracker` | TrackerBackend | Access to the ticket tracker |
 | `git` | GitManager | Git operations |
 | `workpackage_id` | str | Current workpackage (for per-WP steps) |
 | `pod_id` | str | Current pod (for per-pod steps) |
+
+The `llm_provider` is created by the CLI from the `providers` config. If a
+provider pool is configured, agents get the pool (which implements `LLMProvider`).
+If no provider is configured, `llm_provider` is `None`.
 
 ## Fallback Behavior
 
