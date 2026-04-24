@@ -70,6 +70,49 @@ def get_model_config(self):
 
 The pool tries the preferred provider first, falls back to others if unavailable.
 
+### ModelConfig Defaults
+
+All `LLMExecutor` and `HybridExecutor` agents use `ModelConfig` for LLM settings.
+Agents override via `get_model_config()`.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `model_id` | `anthropic.claude-sonnet-4-20250514` | Bedrock model ID |
+| `region` | `us-east-1` | AWS region |
+| `temperature` | `0.2` | Sampling temperature |
+| `max_output_tokens` | `64_000` | Max tokens per LLM response |
+| `max_tool_iterations` | `50` | Max tool call turns in agent loop |
+| `retry_max_attempts` | `5` | Retries on throttling/transient errors |
+| `retry_base_delay` | `2.0` | Base delay for exponential backoff (seconds) |
+| `preferred_provider` | `None` | Label from pool config for provider preference |
+| `history_strategy` | `"truncate"` | Sliding window strategy: `truncate`, `summarize`, `none` |
+| `history_trigger_tokens` | `120_000` | Start truncating when history exceeds this |
+| `history_keep_tokens` | `60_000` | Keep this many recent tokens after truncation |
+
+### Sliding Window History
+
+Long-running agents accumulate large conversation histories. The provider
+manages this automatically based on `ModelConfig` settings:
+
+- **truncate** (default): drops oldest tool-result messages, keeps system prompt
+  and recent messages. Fast, no extra LLM call.
+- **summarize**: uses a cheap model to summarize dropped messages. *(Future)*
+- **none**: no history management. Use for short-lived agents.
+
+Agents tune thresholds via `get_model_config()`:
+
+```python
+def get_model_config(self):
+    from conductor.providers.base import ModelConfig
+    return ModelConfig(
+        history_strategy="truncate",
+        history_trigger_tokens=100_000,  # tighter for this agent
+        history_keep_tokens=40_000,
+    )
+```
+
+See the [LLM Usage Guide](llm-usage.md) for full details.
+
 ### No Provider
 
 If `providers` is not set, `context.llm_provider` is `None`. Agents that need

@@ -42,3 +42,5 @@ staging/
 
 # Kiro IDE
 .kiro/
+
+**/OLD_PYACM/

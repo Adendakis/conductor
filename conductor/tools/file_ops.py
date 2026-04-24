@@ -4,7 +4,7 @@ import os
 import re
 from pathlib import Path
 
-from .base import AgentTool, ToolContext, ToolParameter, ToolSandbox
+from .base import AgentTool, ToolContext, ToolParameter
 
 
 class ReadFileTool(AgentTool):
@@ -37,7 +37,7 @@ class ReadFileTool(AgentTool):
         if not rel_path:
             return "Error: path is required"
 
-        sandbox = ToolSandbox(working_directory=context.working_directory)
+        sandbox = context.get_sandbox()
         if not sandbox.can_read(rel_path):
             return f"Error: access denied for path: {rel_path}"
 
@@ -100,7 +100,7 @@ class WriteFileTool(AgentTool):
         if not rel_path:
             return "Error: path is required"
 
-        sandbox = ToolSandbox(working_directory=context.working_directory)
+        sandbox = context.get_sandbox()
         if not sandbox.can_write(rel_path):
             return f"Error: write access denied for path: {rel_path}"
 
@@ -244,7 +244,7 @@ class ReadFilesTool(AgentTool):
             return "Error: paths is required"
 
         paths = [p.strip() for p in paths_str.splitlines() if p.strip()]
-        sandbox = ToolSandbox(working_directory=context.working_directory)
+        sandbox = context.get_sandbox()
 
         results = []
         total_size = 0

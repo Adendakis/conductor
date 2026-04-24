@@ -111,7 +111,14 @@ class MyCodeGen(LLMExecutor):
         return f"Generate code for {ticket.metadata.workpackage}..."
 ```
 
-The LLM gets file read/write/search tools automatically.
+The LLM gets file read/write/search tools automatically. The framework also:
+
+- Appends a **read-once instruction** to every prompt (prevents redundant file reads)
+- **Pre-loads referenced files** found in the prompt text (saves tool call round-trips)
+- Manages **sliding window history** to prevent context overflow on long runs
+- Provides a **configurable sandbox** for file access control
+
+See the [LLM Usage Guide](llm-usage.md) for full details on these features.
 
 ### ReviewerExecutor — Quality Review
 
@@ -168,6 +175,79 @@ registry.register(CaoUsingAgent(
 ```
 
 See `examples/demo-project/agents/example_cao_using_agent.py` for the full boilerplate.
+
+## LLMExecutor Override Points
+
+`LLMExecutor` agents have several optional overrides beyond the required
+`get_system_prompt()` and `get_user_prompt()`. All have sensible defaults —
+override only what you need.
+
+### Custom Tools
+
+The default tool set includes `read_file`, `read_files` (batch), `write_file`,
+`list_files`, and `search_file`. To add extra tools:
+
+```python
+def get_tools(self):
+    from conductor.tools.shell import ExecuteCommandTool
+    tools = super().get_tools()
+    tools.append(ExecuteCommandTool())
+    return tools
+```
+
+The `ExecuteCommandTool` runs sandboxed shell commands (sqlite3, grep, etc.)
+with an allowlist and timeout. It is not included by default — agents opt in.
+
+### Custom Sandbox
+
+The default sandbox blocks writes to `output/analysis/*` and `input/*`.
+Override `get_sandbox_config()` to adjust:
+
+```python
+def get_sandbox_config(self) -> dict:
+    return {
+        "write_allowed_exceptions": ["output/analysis/value_streams/*"],
+        "read_blocked_patterns": ["*.dat", "*.ps"],
+    }
+```
+
+Available keys: `read_blocked_patterns`, `write_blocked_patterns`,
+`write_allowed_exceptions`. Omitted keys use defaults.
+
+### Model Configuration
+
+Override `get_model_config()` for agent-specific tuning:
+
+```python
+def get_model_config(self):
+    from conductor.providers.base import ModelConfig
+    return ModelConfig(
+        model_id="anthropic.claude-haiku-3-20250310",  # cheaper model
+        max_tool_iterations=80,                         # more turns
+        temperature=0.0,                                # deterministic
+        history_trigger_tokens=100_000,                 # tighter window
+        history_keep_tokens=40_000,
+    )
+```
+
+See [LLM Usage Guide — Default Model Configuration](llm-usage.md#default-model-configuration)
+for all available fields.
+
+### Pre-Loaded Files
+
+If your agent always needs certain files that aren't referenced in the prompt
+text, declare them to avoid unnecessary tool calls:
+
+```python
+def get_preloaded_files(self, ticket, context) -> list[str]:
+    return [
+        "templates/Value_Streams.json",
+        "output/analysis/reports/analysis_summary.md",
+    ]
+```
+
+Files referenced in the prompt text are inlined automatically — this override
+is for additional files the framework can't detect from the prompt.
 
 ## Execution Context
 

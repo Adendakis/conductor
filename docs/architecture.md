@@ -104,6 +104,43 @@ my-project/                 ← user's project
 The `agents_module` config tells conductor which Python module to import.
 The module's `register()` function adds agents to the registry.
 
+## LLM Agent Loop
+
+When an `LLMExecutor` agent runs, the framework applies several optimizations
+before and during the LLM tool loop:
+
+```
+LLMExecutor.execute()
+  ├── get_user_prompt()
+  ├── _resolve_prompt_references()     ← scan prompt for file paths, inline content
+  ├── _inline_preloaded_files()        ← inline agent-declared files
+  ├── append _READ_ONCE_INSTRUCTION    ← "don't re-read files" instruction
+  └── provider.run_agent_loop()
+        ├── build sandbox (with agent overrides)
+        └── for each iteration:
+              ├── check sliding window → truncate if over threshold
+              ├── call LLM (converse)
+              ├── log reasoning + tool calls
+              ├── execute tools (with sandbox)
+              └── repeat until end_turn or max_iterations
+```
+
+**Default tools** provided to every LLM agent: `read_file`, `read_files` (batch,
+200KB budget), `write_file`, `list_files`, `search_file`.
+
+**Optional tools** agents can opt into: `execute_command` (sandboxed shell with
+allowlist and timeout).
+
+**Sandbox**: file access is controlled by `ToolSandbox`. The default blocks writes
+to `output/analysis/*` and `input/*`. Agents override via `get_sandbox_config()`.
+
+**Sliding window**: the provider estimates conversation token count before each
+LLM call. If it exceeds `history_trigger_tokens`, oldest messages are dropped
+(keeping the original prompt and recent context). A context note is inserted so
+the LLM knows history was trimmed.
+
+See the [LLM Usage Guide](llm-usage.md) for configuration details.
+
 ## Package Structure
 
 ```
@@ -113,8 +150,8 @@ conductor/
 ├── watcher/         ← EventWatcher (sync) + AsyncEventWatcher + dependency resolver
 ├── executor/        ← AgentExecutor ABC + Tool/Hybrid/LLM/Reviewer executors + registry
 ├── context/         ← ContextAssembler + PromptContext
-├── providers/       ← LLMProvider ABC + BedrockProvider
-├── tools/           ← AgentTool ABC + file ops (read/write/list/search)
+├── providers/       ← LLMProvider ABC + BedrockProvider + sliding window history
+├── tools/           ← AgentTool ABC + file ops (read/write/list/search/batch) + shell
 ├── validation/      ← DeliverableValidator + custom validators
 ├── git/             ← GitManager + WorktreeManager
 ├── pipeline/        ← Pipeline builder + YAML loader + validator

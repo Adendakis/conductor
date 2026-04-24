@@ -17,11 +17,16 @@ class ModelConfig:
     model_id: str = "anthropic.claude-sonnet-4-20250514"
     region: str = "us-east-1"
     temperature: float = 0.2
-    max_output_tokens: int = 16_000
+    max_output_tokens: int = 64_000
     max_tool_iterations: int = 50
     retry_max_attempts: int = 5
     retry_base_delay: float = 2.0
     preferred_provider: Optional[str] = None  # label from pool config
+
+    # Sliding window history management
+    history_strategy: str = "truncate"  # "truncate", "summarize", "none"
+    history_trigger_tokens: int = 120_000  # start truncating above this
+    history_keep_tokens: int = 60_000  # keep this many recent tokens
 
 
 @dataclass
@@ -73,6 +78,7 @@ class LLMProvider(ABC):
         model_config: ModelConfig,
         working_directory: Path,
         max_iterations: int = 50,
+        sandbox_overrides: dict | None = None,
     ) -> AgentLoopResponse:
         """Run an agent loop: LLM calls tools until done."""
         ...

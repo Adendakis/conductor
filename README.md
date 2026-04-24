@@ -4,6 +4,8 @@
 
 # Conductor
 
+[![GitHub](https://img.shields.io/badge/GitHub-Adendakis%2Fconductor-blue?logo=github)](https://github.com/Adendakis/conductor)
+
 An event-driven orchestration framework where an issue board is the control plane.
 You define pipelines in YAML, plug in any agent (scripts, LLMs, tools, remote workers),
 and conductor handles scheduling, dependencies, human review gates, rework loops,
@@ -12,6 +14,10 @@ and git checkpointing — all visible on a real-time Kanban dashboard.
 ## Quick Start
 
 ```bash
+# Clone the repo
+git clone https://github.com/Adendakis/conductor.git
+cd conductor
+
 # Install
 pip install -e .
 
@@ -64,12 +70,14 @@ tmux session, or a remote HTTP worker.
 - **Pod worktrees** — parallel pods with merge conflict detection
 - **Pipeline validation** — catches cycles, bad references, duplicates
 - **Plugin system** — agents live in your project, not in conductor
+- **LLM agent optimizations** — read-once instruction, prompt pre-loading, sliding window history, per-agent sandbox and model config
 
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
 - [Pipeline Reference](docs/pipeline-reference.md)
 - [Writing Agents](docs/writing-agents.md)
+- [LLM Usage Guide](docs/llm-usage.md)
 - [Configuration](docs/configuration.md)
 - [Architecture](docs/architecture.md)
 
@@ -103,8 +111,8 @@ conductor/                    ← this repo
 │   ├── watcher/              ← Event loop + dependency resolver
 │   ├── executor/             ← Agent base classes + registry
 │   ├── context/              ← Prompt assembly
-│   ├── providers/            ← LLM abstraction (Bedrock)
-│   ├── tools/                ← File ops for LLM agents
+│   ├── providers/            ← LLM abstraction (Bedrock, sliding window)
+│   ├── tools/                ← File ops + shell tool for LLM agents
 │   ├── validation/           ← Deliverable validators
 │   ├── git/                  ← Git manager + worktrees
 │   ├── pipeline/             ← Builder + YAML loader + validator
@@ -135,4 +143,4 @@ pytest tests/ -v
 
 ## License
 
-MIT
+MIT — [github.com/Adendakis/conductor](https://github.com/Adendakis/conductor)

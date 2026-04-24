@@ -124,6 +124,7 @@ class ProviderPool(LLMProvider):
         model_config: ModelConfig,
         working_directory: Path,
         max_iterations: int = 50,
+        sandbox_overrides: dict | None = None,
     ) -> AgentLoopResponse:
         """Agent loop with failover — tries the full loop on each provider."""
         ordered = self._select_order(model_config)
@@ -140,6 +141,7 @@ class ProviderPool(LLMProvider):
                     model_config=model_config,
                     working_directory=working_directory,
                     max_iterations=max_iterations,
+                    sandbox_overrides=sandbox_overrides,
                 )
                 elapsed = time.time() - start
                 lp.metrics.total_latency += elapsed

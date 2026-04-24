@@ -28,6 +28,13 @@ class ToolContext:
     turns_since_write: int = 0
     total_tool_calls: int = 0
     files_written: list[str] = field(default_factory=list)
+    sandbox: Optional["ToolSandbox"] = None
+
+    def get_sandbox(self) -> "ToolSandbox":
+        """Return the sandbox, creating a default if none was set."""
+        if self.sandbox is not None:
+            return self.sandbox
+        return ToolSandbox(working_directory=self.working_directory)
 
 
 @dataclass

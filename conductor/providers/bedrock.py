@@ -1,5 +1,6 @@
 """AWS Bedrock Converse API provider."""
 
+import logging
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -10,6 +11,8 @@ from .base import AgentLoopResponse, LLMProvider, LLMResponse, ModelConfig
 
 if TYPE_CHECKING:
     from conductor.tools.base import AgentTool
+
+log = logging.getLogger("conductor.providers.bedrock")
 
 
 class BedrockProvider(LLMProvider):
@@ -76,9 +79,10 @@ class BedrockProvider(LLMProvider):
         model_config: ModelConfig,
         working_directory: Path,
         max_iterations: int = 50,
+        sandbox_overrides: dict | None = None,
     ) -> AgentLoopResponse:
         """Run an agent loop: LLM calls tools until done."""
-        from conductor.tools.base import ToolContext
+        from conductor.tools.base import ToolContext, ToolSandbox
 
         start = time.time()
         total_input_tokens = 0
@@ -89,8 +93,21 @@ class BedrockProvider(LLMProvider):
         turns_since_write = 0
         files_written: list[str] = []
 
+        # Build sandbox with optional agent overrides
+        sandbox_kwargs: dict[str, Any] = {"working_directory": working_directory}
+        if sandbox_overrides:
+            for key in (
+                "read_blocked_patterns",
+                "write_blocked_patterns",
+                "write_allowed_exceptions",
+            ):
+                if key in sandbox_overrides:
+                    sandbox_kwargs[key] = sandbox_overrides[key]
+        sandbox = ToolSandbox(**sandbox_kwargs)
+
         tool_context = ToolContext(
             working_directory=working_directory,
+            sandbox=sandbox,
         )
 
         # Build tool definitions for Bedrock
@@ -98,6 +115,14 @@ class BedrockProvider(LLMProvider):
             "tools": [t.to_bedrock_schema() for t in tools]
         }
         tool_map = {t.name: t for t in tools}
+
+        log.info(
+            "🤖 Agent loop started: model=%s, tools=[%s], max_iter=%d",
+            model_config.model_id,
+            ", ".join(tool_map.keys()),
+            max_iterations,
+        )
+        log.info("  Prompt: %d chars, working_dir: %s", len(user_prompt), working_directory)
 
         # Initial messages
         messages: list[dict[str, Any]] = [
@@ -108,7 +133,9 @@ class BedrockProvider(LLMProvider):
 
         for iteration in range(max_iterations):
             # Elapsed time check
-            if time.time() - start > 900:  # 15 min
+            elapsed_so_far = time.time() - start
+            if elapsed_so_far > 900:  # 15 min
+                log.warning("⏰ Agent loop timed out after %.1fs", elapsed_so_far)
                 return AgentLoopResponse(
                     completed=False,
                     final_text="Agent loop timed out (15 min)",
@@ -116,6 +143,12 @@ class BedrockProvider(LLMProvider):
                     tool_calls_made=tool_calls_made,
                     error="Timeout exceeded",
                 )
+
+            log.info(
+                "  ── Turn %d/%d (%.1fs elapsed, %d tool calls, tokens: in=%d out=%d)",
+                iteration + 1, max_iterations, elapsed_so_far,
+                tool_calls_made, total_input_tokens, total_output_tokens,
+            )
 
             # Nudge if too many turns without writing
             if turns_since_write >= 30:
@@ -127,6 +160,20 @@ class BedrockProvider(LLMProvider):
                     )}],
                 })
                 turns_since_write = 0
+
+            # --- Sliding window history management ---
+            if model_config.history_strategy != "none":
+                estimated = self._estimate_message_tokens(messages)
+                if estimated > model_config.history_trigger_tokens:
+                    messages = self._truncate_history(
+                        messages, model_config.history_keep_tokens
+                    )
+                    log.info(
+                        "  ✂️  History truncated: ~%d tokens → ~%d tokens (keep=%d)",
+                        estimated,
+                        self._estimate_message_tokens(messages),
+                        model_config.history_keep_tokens,
+                    )
 
             try:
                 response = self._call_with_retry(
@@ -153,8 +200,10 @@ class BedrockProvider(LLMProvider):
 
             # Track tokens
             usage = response.get("usage", {})
-            total_input_tokens += usage.get("inputTokens", 0)
-            total_output_tokens += usage.get("outputTokens", 0)
+            iter_input = usage.get("inputTokens", 0)
+            iter_output = usage.get("outputTokens", 0)
+            total_input_tokens += iter_input
+            total_output_tokens += iter_output
             total_cache_write += usage.get("cacheWriteInputTokens", 0)
             total_cache_read += usage.get("cacheReadInputTokens", 0)
 
@@ -162,6 +211,21 @@ class BedrockProvider(LLMProvider):
             stop_reason = response.get("stopReason", "end_turn")
             output_message = response.get("output", {}).get("message", {})
             content_blocks = output_message.get("content", [])
+
+            log.info(
+                "  ← Response: stop=%s, tokens_in=%d, tokens_out=%d, blocks=%d",
+                stop_reason, iter_input, iter_output, len(content_blocks),
+            )
+
+            # Log any text reasoning from the LLM
+            for block in content_blocks:
+                if "text" in block:
+                    text = block["text"].strip()
+                    if text:
+                        preview = text[:300].replace("\n", " ")
+                        if len(text) > 300:
+                            preview += "..."
+                        log.info("  💭 %s", preview)
 
             # Append assistant message
             messages.append({"role": "assistant", "content": content_blocks})
@@ -178,6 +242,15 @@ class BedrockProvider(LLMProvider):
                     total_input_tokens, total_output_tokens,
                     model_config.model_id, total_cache_write, total_cache_read,
                 )
+                log.info(
+                    "✅ Agent loop complete: %d turns, %d tool calls, "
+                    "tokens=%d/%d, %.1fs, $%.4f",
+                    iteration + 1, tool_calls_made,
+                    total_input_tokens, total_output_tokens,
+                    elapsed, cost,
+                )
+                if files_written:
+                    log.info("  📝 Files written: %s", files_written)
                 metrics = StepMetrics(
                     model_id=model_config.model_id,
                     input_tokens=total_input_tokens,
@@ -209,6 +282,16 @@ class BedrockProvider(LLMProvider):
                         tool_calls_made += 1
                         turns_since_write += 1
 
+                        # Log tool call with argument summary
+                        arg_summary = ", ".join(
+                            f"{k}={str(v)[:80]!r}" for k, v in arguments.items()
+                            if k != "content"  # don't log file content
+                        )
+                        if "content" in arguments:
+                            arg_summary += f", content=<{len(arguments['content'])} chars>"
+                        log.info("  🔧 Tool: %s(%s)", tool_name, arg_summary)
+
+                        tool_start = time.time()
                         if tool_name in tool_map:
                             try:
                                 # Execute tool synchronously
@@ -218,6 +301,14 @@ class BedrockProvider(LLMProvider):
                                         arguments, tool_context
                                     )
                                 )
+                                tool_elapsed = time.time() - tool_start
+                                result_preview = result_text[:150].replace("\n", " ")
+                                if len(result_text) > 150:
+                                    result_preview += "..."
+                                log.info(
+                                    "    → %s (%.1fs, %d chars): %s",
+                                    tool_name, tool_elapsed, len(result_text), result_preview,
+                                )
                                 # Track writes
                                 if tool_name == "write_file" and "path" in arguments:
                                     files_written.append(arguments["path"])
@@ -225,10 +316,13 @@ class BedrockProvider(LLMProvider):
                                     tool_context.files_written.append(
                                         arguments["path"]
                                     )
+                                    log.info("    📝 Wrote: %s", arguments["path"])
                             except Exception as e:
                                 result_text = f"Error: {e}"
+                                log.error("    ✗ Tool error: %s — %s", tool_name, e)
                         else:
                             result_text = f"Unknown tool: {tool_name}"
+                            log.warning("    ⚠ Unknown tool: %s", tool_name)
 
                         tool_results.append({
                             "toolResult": {
@@ -251,6 +345,81 @@ class BedrockProvider(LLMProvider):
             tool_calls_made=tool_calls_made,
             error=f"Reached max iterations ({max_iterations})",
         )
+
+    # ------------------------------------------------------------------
+    # Sliding window history helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _estimate_message_tokens(messages: list[dict[str, Any]]) -> int:
+        """Rough token estimate: ~4 chars per token for English text."""
+        total_chars = 0
+        for msg in messages:
+            for block in msg.get("content", []):
+                if "text" in block:
+                    total_chars += len(block["text"])
+                elif "toolResult" in block:
+                    for sub in block["toolResult"].get("content", []):
+                        if "text" in sub:
+                            total_chars += len(sub["text"])
+                elif "toolUse" in block:
+                    # Count the input JSON roughly
+                    import json
+                    try:
+                        total_chars += len(json.dumps(block["toolUse"].get("input", {})))
+                    except (TypeError, ValueError):
+                        total_chars += 100
+        return total_chars // 4
+
+    @staticmethod
+    def _truncate_history(
+        messages: list[dict[str, Any]], keep_tokens: int
+    ) -> list[dict[str, Any]]:
+        """Drop oldest messages (after the first user message) to fit budget.
+
+        Always keeps:
+        - messages[0]: the original user prompt
+        - The most recent messages that fit within keep_tokens
+        """
+        if len(messages) <= 2:
+            return messages
+
+        first_message = messages[0]
+        rest = messages[1:]
+
+        # Walk backwards, accumulating tokens until we hit the budget
+        kept: list[dict[str, Any]] = []
+        running = 0
+        for msg in reversed(rest):
+            msg_chars = 0
+            for block in msg.get("content", []):
+                if "text" in block:
+                    msg_chars += len(block["text"])
+                elif "toolResult" in block:
+                    for sub in block["toolResult"].get("content", []):
+                        if "text" in sub:
+                            msg_chars += len(sub["text"])
+            msg_tokens = msg_chars // 4
+            if running + msg_tokens > keep_tokens and kept:
+                break
+            running += msg_tokens
+            kept.append(msg)
+
+        kept.reverse()
+
+        # Insert a context note so the LLM knows history was trimmed
+        context_note = {
+            "role": "user",
+            "content": [{"text": (
+                "[SYSTEM] Earlier conversation history was truncated to stay "
+                "within context limits. The original task prompt and most "
+                "recent messages are preserved. Do NOT re-read files you "
+                "have already processed — their content was in the removed "
+                "history. Continue from where you left off."
+            )}],
+        }
+
+        return [first_message, context_note] + kept
 
     def _build_request(
         self, system_prompt: str, user_prompt: str, model_config: ModelConfig
@@ -303,6 +472,11 @@ class BedrockProvider(LLMProvider):
                 )
                 if is_retryable and attempt < model_config.retry_max_attempts:
                     wait = min(model_config.retry_base_delay ** attempt, 60)
+                    log.warning(
+                        "  ⏳ Retry %d/%d (wait %.1fs): %s",
+                        attempt, model_config.retry_max_attempts, wait,
+                        str(exc)[:100],
+                    )
                     time.sleep(wait)
                     continue
                 raise
