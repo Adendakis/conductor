@@ -17,6 +17,8 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
     """Create the FastAPI dashboard app."""
+    from fastapi.responses import FileResponse
+
     app = FastAPI(title="Conductor Dashboard", version="0.1.0")
 
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
@@ -24,6 +26,27 @@ def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
 
     tracker = SqliteTracker(db_path=db_path)
     tracker.connect({})
+
+    # Resolve project root from db_path (db is at .conductor/tracker.db)
+    _project_root = Path(db_path).parent.parent
+
+    @app.get("/logo")
+    async def logo():
+        """Serve project logo if exists, else default conductor logo."""
+        # Check project-level logo
+        for name in ("logo.png", "logo.svg", "logo.jpg"):
+            project_logo = _project_root / ".conductor" / name
+            if project_logo.exists():
+                media = "image/png" if name.endswith(".png") else "image/svg+xml" if name.endswith(".svg") else "image/jpeg"
+                return FileResponse(str(project_logo), media_type=media)
+
+        # Default conductor logo
+        default_logo = _STATIC_DIR / "conductor_logo.png"
+        if default_logo.exists():
+            return FileResponse(str(default_logo), media_type="image/png")
+
+        # No logo at all
+        return HTMLResponse("", status_code=204)
 
     # --- HTML Pages ---
 
