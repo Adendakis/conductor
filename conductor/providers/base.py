@@ -21,6 +21,7 @@ class ModelConfig:
     max_tool_iterations: int = 50
     retry_max_attempts: int = 5
     retry_base_delay: float = 2.0
+    preferred_provider: Optional[str] = None  # label from pool config
 
 
 @dataclass

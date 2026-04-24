@@ -156,12 +156,16 @@ def watch(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json)
             except Exception:
                 pass
 
+    # Create LLM provider from config
+    llm_provider = _load_provider_from_config(project_config)
+
     watcher = EventWatcher(
         tracker=trk,
         registry=registry,
         git=git,
         config=watcher_config,
         project_config=project_config,
+        llm_provider=llm_provider,
     )
     watcher.run()
 
@@ -239,6 +243,9 @@ def watch_async(poll_interval, max_concurrent, no_hitl, log_level, log_file, log
         pipeline_phases = build_pipeline("full")
         click.echo("⚠ Using built-in 'full' pipeline (no pipeline.yaml loaded)")
 
+    # Create LLM provider from config
+    llm_provider = _load_provider_from_config(project_config)
+
     watcher = AsyncEventWatcher(
         tracker=trk,
         registry=registry,
@@ -246,8 +253,39 @@ def watch_async(poll_interval, max_concurrent, no_hitl, log_level, log_file, log
         config=watcher_config,
         project_config=project_config,
         pipeline=pipeline_phases,
+        llm_provider=llm_provider,
     )
     watcher.run()
+
+
+def _load_provider_from_config(project_config: ProjectConfig):
+    """Load LLM provider from .conductor/config.yaml if configured."""
+    config_path = project_config.project_base_path / ".conductor" / "config.yaml"
+    if not config_path.exists():
+        return None
+
+    try:
+        import yaml
+        cfg = yaml.safe_load(config_path.read_text())
+    except Exception:
+        return None
+
+    providers_cfg = cfg.get("providers", cfg.get("provider", {}))
+    if not providers_cfg:
+        return None
+
+    try:
+        from conductor.providers.factory import build_provider_from_config
+        provider = build_provider_from_config(cfg)
+        if provider:
+            click.echo(f"🤖 LLM provider loaded from config")
+        return provider
+    except ImportError as e:
+        click.echo(f"⚠ {e}")
+        return None
+    except Exception as e:
+        click.echo(f"⚠ Failed to create LLM provider: {e}")
+        return None
 
 
 @main.command()
