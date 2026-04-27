@@ -95,6 +95,8 @@ conductor ticket show COND-001
 conductor ticket approve COND-001
 conductor ticket reject COND-001 -c "Needs more detail"
 conductor ticket pause/resume/retry COND-001
+conductor ticket delete COND-001          # delete single ticket
+conductor ticket delete --phase phase_3   # delete all tickets in a phase
 
 conductor pipeline show            # Display phase/step tree
 conductor pipeline agents          # List all agents

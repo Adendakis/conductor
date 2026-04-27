@@ -278,3 +278,119 @@ class GitManager:
         """Check if the working directory is a git repository."""
         result = self._run(["rev-parse", "--git-dir"], check=False)
         return result is not None and result.returncode == 0
+
+    # --- WP branch operations (for pod worktree support) ---
+
+    def checkout_branch(self, branch: str, cwd: Path) -> bool:
+        """Checkout a branch in a given directory (worktree).
+
+        Args:
+            branch: Branch name to checkout
+            cwd: Directory to run the checkout in (worktree path)
+        """
+        if not self.enabled:
+            return False
+        result = self._run(["checkout", branch], check=False, cwd=cwd)
+        if result and result.returncode == 0:
+            logger.debug(f"Checked out {branch} in {cwd}")
+            return True
+        logger.warning(
+            f"Failed to checkout {branch} in {cwd}: "
+            f"{result.stderr if result else 'disabled'}"
+        )
+        return False
+
+    def create_branch_at(
+        self, branch: str, base: str = "HEAD", cwd: Optional[Path] = None
+    ) -> bool:
+        """Create a branch from a given base ref.
+
+        Args:
+            branch: New branch name
+            base: Base ref (default HEAD)
+            cwd: Directory to run in (default repo_path)
+        """
+        if not self.enabled:
+            return False
+        result = self._run(["branch", branch, base], check=False, cwd=cwd)
+        if result and result.returncode == 0:
+            logger.debug(f"Created branch {branch} from {base}")
+            return True
+        # Branch might already exist
+        logger.debug(
+            f"Could not create branch {branch}: "
+            f"{result.stderr.strip() if result else 'disabled'}"
+        )
+        return False
+
+    def merge_branch(
+        self, branch: str, message: str = "", cwd: Optional[Path] = None
+    ) -> MergeResult:
+        """Merge a branch in a given directory. Aborts on conflict.
+
+        Args:
+            branch: Branch to merge
+            message: Merge commit message
+            cwd: Directory to run in (default repo_path)
+        """
+        if not self.enabled:
+            return MergeResult(success=False, branch=branch, error="Git disabled")
+
+        msg = message or f"Merge {branch}"
+        result = self._run(
+            ["merge", branch, "--no-ff", "-m", msg], check=False, cwd=cwd
+        )
+
+        if result and result.returncode == 0:
+            logger.info(f"Merged {branch} successfully")
+            return MergeResult(success=True, branch=branch)
+
+        # Check for conflicts
+        if result and "CONFLICT" in (result.stdout + result.stderr):
+            conflict_result = self._run(
+                ["diff", "--name-only", "--diff-filter=U"], check=False, cwd=cwd
+            )
+            conflicted = []
+            if conflict_result and conflict_result.stdout:
+                conflicted = [
+                    f.strip()
+                    for f in conflict_result.stdout.splitlines()
+                    if f.strip()
+                ]
+            self._run(["merge", "--abort"], check=False, cwd=cwd)
+            logger.warning(f"Merge conflict on {branch}: {conflicted}")
+            return MergeResult(
+                success=False,
+                branch=branch,
+                conflicted_files=conflicted,
+                error=f"Merge conflict in {len(conflicted)} file(s)",
+            )
+
+        error_msg = result.stderr.strip() if result else "Unknown error"
+        return MergeResult(success=False, branch=branch, error=error_msg)
+
+    def add_and_commit(
+        self, message: str, cwd: Optional[Path] = None
+    ) -> Optional[str]:
+        """Stage all changes and commit. Returns SHA or None."""
+        if not self.enabled:
+            return None
+        run_cwd = cwd or self.repo_path
+        self._run(["add", "-A"], check=False, cwd=run_cwd)
+        result = self._run(
+            ["commit", "-m", message, "--allow-empty"],
+            check=False,
+            cwd=run_cwd,
+        )
+        if result and result.returncode == 0:
+            sha_result = self._run(
+                ["rev-parse", "HEAD"], check=False, cwd=run_cwd
+            )
+            if sha_result and sha_result.returncode == 0:
+                return sha_result.stdout.strip()
+        return None
+
+    def force_delete_branch(self, branch: str) -> bool:
+        """Force-delete a branch (even if not fully merged)."""
+        result = self._run(["branch", "-D", branch], check=False)
+        return result is not None and result.returncode == 0

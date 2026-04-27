@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Conductor — Board</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=3">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body>
@@ -13,7 +13,7 @@
       <img src="/logo" alt="Logo" style="height:64px;" onerror="this.style.display='none'">
       <h1>Conductor</h1>
     </div>
-    <div class="stats" hx-get="/api/stats" hx-trigger="load, every 30s" hx-swap="innerHTML">
+    <div class="stats" hx-get="/api/stats" hx-trigger="load, every 10s" hx-swap="innerHTML">
       Loading...
     </div>
   </div>
@@ -38,6 +38,8 @@
     </select>
     <button class="btn" onclick="clearFilters()">✕ Clear</button>
     <button class="btn" onclick="refreshBoard()">↻ Refresh</button>
+    <span style="margin-left:auto;"></span>
+    <button id="compact-toggle" class="btn" onclick="toggleCompact()">▣ Compact</button>
   </div>
 
   <div id="board-container" class="board"
@@ -49,6 +51,30 @@
   <div id="ticket-modal"></div>
 
   <script>
+    // --- UTC → local time conversion ---
+    function convertUtcTimestamps(root) {
+      (root || document).querySelectorAll('.utc-time').forEach(function(el) {
+        var utc = el.getAttribute('data-utc');
+        if (!utc) { el.textContent = '—'; return; }
+        try {
+          // Ensure the string is parsed as UTC
+          if (!utc.endsWith('Z') && !utc.includes('+')) utc += 'Z';
+          var d = new Date(utc);
+          if (isNaN(d.getTime())) { el.textContent = utc.slice(0, 16); return; }
+          var pad = function(n) { return n < 10 ? '0' + n : n; };
+          el.textContent = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+            + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        } catch(e) {
+          el.textContent = utc.slice(0, 16);
+        }
+      });
+    }
+
+    // Convert on initial page load
+    document.addEventListener('DOMContentLoaded', function() {
+      convertUtcTimestamps(document);
+    });
+
     // Populate filter dropdowns on load
     async function loadFilters() {
       const resp = await fetch('/api/tickets');
@@ -100,7 +126,36 @@
     }
 
     // Auto-reload board every 5 seconds (preserves filters)
-    let autoReloadInterval = setInterval(refreshBoard, 5000);
+    let autoReloadInterval = setInterval(refreshBoard, 10000);
+
+    // --- Compact mode ---
+    function isCompact() {
+      return localStorage.getItem('conductor-compact') === '1';
+    }
+
+    function applyCompact() {
+      var board = document.getElementById('board-container');
+      var btn = document.getElementById('compact-toggle');
+      if (!board || !btn) return;
+      if (isCompact()) {
+        board.classList.add('compact');
+        btn.classList.add('compact-active');
+        btn.textContent = '▣ Compact ✓';
+      } else {
+        board.classList.remove('compact');
+        btn.classList.remove('compact-active');
+        btn.textContent = '▣ Compact';
+      }
+    }
+
+    function toggleCompact() {
+      var newVal = isCompact() ? '0' : '1';
+      localStorage.setItem('conductor-compact', newVal);
+      applyCompact();
+    }
+
+    // Apply compact on initial load
+    applyCompact();
 
     // Pause auto-reload when modal is open
     function showTicket(ticketId) {
@@ -111,7 +166,7 @@
     function closeModal() {
       document.getElementById('ticket-modal').innerHTML = '';
       refreshBoard();
-      autoReloadInterval = setInterval(refreshBoard, 5000);
+      autoReloadInterval = setInterval(refreshBoard, 10000);  // ← restarts it
     }
 
     // Close modal on escape
@@ -119,8 +174,17 @@
       if (e.key === 'Escape') closeModal();
     });
 
-    // Auto-refresh stats
+    // Unified htmx:afterSwap handler
     document.body.addEventListener('htmx:afterSwap', function(e) {
+      // Convert UTC timestamps on any swap
+      convertUtcTimestamps(e.target);
+
+      // Re-apply compact mode after board refresh
+      if (e.target.id === 'board-container') {
+        applyCompact();
+      }
+
+      // Format stats
       if (e.target.classList.contains('stats')) {
         try {
           const data = JSON.parse(e.target.innerText);

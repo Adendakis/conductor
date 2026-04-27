@@ -31,6 +31,7 @@ pipeline:
 | `scope` | string | No | `global` (default), `per_workpackage`, `per_domain`, `per_pod` |
 | `depends_on` | list | No | Phase IDs that must complete before this phase starts |
 | `creates_next_phases` | list | No | Phase IDs to create when this phase completes |
+| `post_phase_hook` | string | No | Hook to run when phase completes (e.g., `setup_and_execute_pods`) |
 | `steps` | list | Yes | Steps within this phase |
 
 ## Step Fields
@@ -128,6 +129,34 @@ Resolved to: `output/specs/WP-001/report.md`, `output/specs/WP-002/report.md`, e
   agent: "validator"
   hitl_after: false        # auto-approve, unblock next step
 ```
+
+### Pattern 4: Pod-Scoped Parallel Execution
+
+```yaml
+- id: "phase_2_5"
+  name: "Pod Assignment"
+  scope: "global"
+  post_phase_hook: "setup_and_execute_pods"  # triggers worktree creation
+  creates_next_phases: ["phase_3"]
+  steps:
+    - id: "assign_pods"
+      agent: "pod_assigner"
+      deliverables:
+        - path: "output/analysis/workpackages/Pod_Assignment.json"
+          type: "json"
+
+- id: "phase_3"
+  name: "Business Specification"
+  scope: "per_workpackage"
+  steps:
+    - id: "spec"
+      agent: "business_spec"
+      deliverables:
+        - path: "output/specs/{wp_id}/Business_Spec.md"
+```
+
+When phase_2_5 completes, the watcher creates pod worktrees and creates
+per-WP tickets with sequential ordering within each pod.
 
 ## Prompt Field
 

@@ -306,6 +306,38 @@ class SqliteTracker(TrackerBackend):
         )
         self._conn.commit()
 
+    def delete_ticket(self, ticket_id: str) -> None:
+        """Delete a ticket and all associated data."""
+        # Verify ticket exists
+        row = self._conn.execute(
+            "SELECT id FROM tickets WHERE id = ?", (ticket_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"Ticket {ticket_id} not found")
+
+        # Delete comments
+        self._conn.execute(
+            "DELETE FROM comments WHERE ticket_id = ?", (ticket_id,)
+        )
+        # Delete status history
+        self._conn.execute(
+            "DELETE FROM status_history WHERE ticket_id = ?", (ticket_id,)
+        )
+        # Delete metrics
+        self._conn.execute(
+            "DELETE FROM step_metrics WHERE ticket_id = ?", (ticket_id,)
+        )
+        # Delete links where this ticket is involved (both directions)
+        self._conn.execute(
+            "DELETE FROM ticket_links WHERE from_id = ? OR to_id = ?",
+            (ticket_id, ticket_id),
+        )
+        # Delete the ticket itself
+        self._conn.execute(
+            "DELETE FROM tickets WHERE id = ?", (ticket_id,)
+        )
+        self._conn.commit()
+
     # --- Internal helpers ---
 
     def _row_to_ticket(self, row: sqlite3.Row) -> Ticket:

@@ -51,7 +51,32 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
   gap: 12px;
   padding: 16px;
   overflow-x: auto;
-  min-height: calc(100vh - 60px);
+  min-height: calc(100vh - 110px);
+  scrollbar-color: var(--border) var(--bg-primary);
+  position: relative;
+  background: url('/logo') no-repeat center center;
+  background-size: 400px 400px;
+}
+
+/* Visible horizontal scrollbar — dark theme */
+.board::-webkit-scrollbar {
+  height: 10px;
+}
+.board::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+  border-radius: 5px;
+}
+.board::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+.board::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Compact mode — hide empty columns */
+.board.compact .column.column-empty {
+  display: none;
 }
 
 .column {
@@ -63,7 +88,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 
 .column-header {
-  background: var(--bg-tertiary);
+  background: rgba(33, 38, 45, 0.85);
   border: 1px solid var(--border);
   border-radius: var(--radius) var(--radius) 0 0;
   padding: 10px 12px;
@@ -83,7 +108,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 }
 
 .column-body {
-  background: var(--bg-secondary);
+  background: rgba(22, 27, 34, 0.80);
   border: 1px solid var(--border);
   border-top: none;
   border-radius: 0 0 var(--radius) var(--radius);
@@ -98,7 +123,7 @@ a:hover { color: var(--accent-hover); text-decoration: underline; }
 
 /* Ticket Cards */
 .card {
-  background: var(--bg-card);
+  background: rgba(28, 33, 40, 0.88);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -260,6 +285,13 @@ textarea:focus { outline: none; border-color: var(--accent); }
   color: var(--text-primary);
   padding: 4px 8px;
   font-size: 12px;
+}
+
+/* Compact toggle active state */
+.btn.compact-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
 }
 
 /* Empty state */

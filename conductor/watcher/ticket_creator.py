@@ -3,12 +3,15 @@
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from conductor.models.enums import TicketStatus, TicketType
 from conductor.models.phases import PhaseDefinition, StepDefinition
 from conductor.models.ticket import Ticket, TicketMetadata
 from conductor.tracker.backend import TrackerBackend
+
+if TYPE_CHECKING:
+    from conductor.git.worktree_manager import WorktreeManager
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +31,15 @@ class DynamicTicketCreator:
         completed_ticket: Ticket,
         next_phases: list[PhaseDefinition],
         tracker: TrackerBackend,
+        worktree_manager: "WorktreeManager | None" = None,
     ) -> list[str]:
         """Create tickets for the next phases based on scope.
+
+        Args:
+            completed_ticket: The ticket that triggered phase completion
+            next_phases: Phase definitions to create tickets for
+            tracker: Ticket tracker backend
+            worktree_manager: Optional worktree manager for pod-scoped phases
 
         Returns list of created ticket IDs.
         """
@@ -37,12 +47,20 @@ class DynamicTicketCreator:
 
         for phase in next_phases:
             if phase.execution_scope == "per_workpackage":
-                workpackages = self._discover_workpackages()
-                for wp_id in workpackages:
-                    ids = self._create_phase_tickets(
-                        phase, tracker, scope_id=wp_id, scope_type="workpackage"
+                if worktree_manager:
+                    # Pod-scoped: create tickets per pod, WPs sequential within pod
+                    ids = self._create_pod_scoped_tickets(
+                        phase, tracker, worktree_manager
                     )
                     created_ids.extend(ids)
+                else:
+                    # No pods: create tickets per WP (original behavior)
+                    workpackages = self._discover_workpackages()
+                    for wp_id in workpackages:
+                        ids = self._create_phase_tickets(
+                            phase, tracker, scope_id=wp_id, scope_type="workpackage"
+                        )
+                        created_ids.extend(ids)
 
             elif phase.execution_scope == "per_domain":
                 domains = self._discover_domains()
@@ -107,6 +125,83 @@ class DynamicTicketCreator:
             created_ids.append(ticket_id)
 
             logger.info(f"Created ticket {ticket_id}: {ticket.title}")
+
+        return created_ids
+
+    def _create_pod_scoped_tickets(
+        self,
+        phase: PhaseDefinition,
+        tracker: TrackerBackend,
+        worktree_manager: "WorktreeManager",
+    ) -> list[str]:
+        """Create per-WP tickets grouped by pod, sequential within each pod.
+
+        For each pod:
+        - WPs are processed in the order listed in Pod_Assignment.json
+        - Each WP's first step is blocked by the previous WP's last step
+        - working_directory is set to the pod's worktree path
+        - metadata.pod is set to the pod ID
+        """
+        created_ids: list[str] = []
+
+        for pod_id in worktree_manager.get_all_pod_ids():
+            worktree_path = worktree_manager.get_worktree_path(pod_id)
+            if not worktree_path:
+                logger.warning(f"No worktree for pod {pod_id}, skipping")
+                continue
+
+            workpackages = worktree_manager.get_pod_workpackages(pod_id)
+            prev_wp_last_ticket_id: str | None = None
+
+            for wp_id in workpackages:
+                # Create tickets for this WP's steps
+                step_id_to_ticket_id: dict[str, str] = {}
+                wp_ticket_ids: list[str] = []
+
+                for step in phase.steps:
+                    # Skip steps that don't match WP type
+                    if step.workpackage_type and wp_id:
+                        wp_type = self._get_workpackage_type(wp_id)
+                        if wp_type and wp_type != step.workpackage_type:
+                            continue
+
+                    ticket = self._build_ticket(
+                        step, phase, scope_id=wp_id, scope_type="workpackage"
+                    )
+
+                    # Set pod and worktree working directory
+                    ticket.metadata.pod = pod_id
+                    ticket.metadata.working_directory = str(worktree_path)
+
+                    # Resolve intra-phase step dependencies
+                    blocked_by: list[str] = []
+                    for dep_step_id in step.depends_on:
+                        if dep_step_id in step_id_to_ticket_id:
+                            blocked_by.append(step_id_to_ticket_id[dep_step_id])
+
+                    # If this is the first step and there's a previous WP,
+                    # block on the previous WP's last ticket (sequential ordering)
+                    if not blocked_by and prev_wp_last_ticket_id:
+                        blocked_by.append(prev_wp_last_ticket_id)
+
+                    ticket.blocked_by = blocked_by
+                    ticket.status = (
+                        TicketStatus.BACKLOG if blocked_by else TicketStatus.READY
+                    )
+
+                    ticket_id = tracker.create_ticket(ticket)
+                    step_id_to_ticket_id[step.step_id] = ticket_id
+                    wp_ticket_ids.append(ticket_id)
+                    created_ids.append(ticket_id)
+
+                    logger.info(
+                        f"Created ticket {ticket_id}: {ticket.title} "
+                        f"(pod={pod_id}, wp={wp_id})"
+                    )
+
+                # Track the last ticket of this WP for sequential chaining
+                if wp_ticket_ids:
+                    prev_wp_last_ticket_id = wp_ticket_ids[-1]
 
         return created_ids
 
@@ -243,7 +338,7 @@ class DynamicTicketCreator:
         return sorted([d.name for d in bre_path.iterdir() if d.is_dir()])
 
     def _discover_pods(self) -> list[str]:
-        """Read Pod_Assignment.json to get pod IDs."""
+        """Read Pod_Assignment.json to get pod IDs (generic format)."""
         pod_path = (
             self.working_directory
             / "output/analysis/workpackages/Pod_Assignment.json"
@@ -254,7 +349,14 @@ class DynamicTicketCreator:
 
         try:
             data = json.loads(pod_path.read_text(encoding="utf-8"))
-            return [pod["podId"] for pod in data.get("pods", [])]
+            # Generic format: {"pods": {"pod-a": {...}, "pod-b": {...}}}
+            pods = data.get("pods", {})
+            if isinstance(pods, dict):
+                return list(pods.keys())
+            # Legacy format: {"pods": [{"podId": "pod-a"}, ...]}
+            if isinstance(pods, list):
+                return [pod["podId"] for pod in pods if "podId" in pod]
+            return []
         except (json.JSONDecodeError, KeyError) as e:
             logger.error(f"Error reading pod assignment: {e}")
             return []

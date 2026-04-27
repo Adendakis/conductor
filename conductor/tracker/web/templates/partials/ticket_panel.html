@@ -16,8 +16,8 @@
       <tr><td>Pod</td><td>{{ ticket.metadata.pod or '—' }}</td></tr>
       <tr><td>Iteration</td><td>{{ ticket.metadata.iteration }} / {{ ticket.metadata.max_iterations }}</td></tr>
       <tr><td>HITL Required</td><td>{{ 'Yes' if ticket.metadata.hitl_required else 'No' }}</td></tr>
-      <tr><td>Last Updated</td><td>{{ ticket.updated_at or ticket.created_at or '—' }}</td></tr>
-      <tr><td>Created</td><td>{{ ticket.created_at or '—' }}</td></tr>
+      <tr><td>Last Updated</td><td><span class="utc-time" data-utc="{{ ticket.updated_at or ticket.created_at or '' }}"></span></td></tr>
+      <tr><td>Created</td><td><span class="utc-time" data-utc="{{ ticket.created_at or '' }}"></span></td></tr>
       <tr><td>Prompt File</td><td><code>{{ ticket.metadata.prompt_file or '—' }}</code></td></tr>
       <tr><td>Blocked By</td><td>{{ ticket.blocked_by|join(', ') or 'None' }}</td></tr>
       <tr><td>Blocks</td><td>{{ ticket.blocks|join(', ') or 'None' }}</td></tr>

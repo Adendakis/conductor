@@ -452,6 +452,65 @@ def ticket_retry(ticket_id):
     click.echo(f"✓ {ticket_id} → READY (retry)")
 
 
+@ticket.command("delete")
+@click.argument("ticket_id", required=False)
+@click.option("--phase", type=str, help="Delete all tickets in a phase")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def ticket_delete(ticket_id, phase, yes):
+    """Delete a ticket or all tickets in a phase.
+
+    Examples:
+        conductor ticket delete COND-004
+        conductor ticket delete --phase phase_3
+        conductor ticket delete --phase phase_3 -y
+    """
+    from conductor.models.enums import TicketStatus
+    from conductor.tracker.sqlite_backend import SqliteTracker
+
+    if not ticket_id and not phase:
+        click.echo("Error: provide a ticket ID or --phase to delete.")
+        return
+
+    trk = SqliteTracker(db_path=".conductor/tracker.db")
+    trk.connect({})
+
+    if ticket_id:
+        # Single ticket delete
+        try:
+            t = trk.get_ticket(ticket_id)
+        except KeyError:
+            click.echo(f"Ticket {ticket_id} not found.")
+            return
+
+        if not yes:
+            click.confirm(
+                f"Delete {ticket_id} ({t.title}, status={t.status.value})?",
+                abort=True,
+            )
+
+        trk.delete_ticket(ticket_id)
+        click.echo(f"✓ Deleted {ticket_id}")
+
+    elif phase:
+        # Bulk delete by phase
+        tickets = trk.get_tickets_by_metadata(phase=phase)
+        if not tickets:
+            click.echo(f"No tickets found for phase '{phase}'.")
+            return
+
+        if not yes:
+            click.confirm(
+                f"Delete {len(tickets)} tickets in phase '{phase}'?",
+                abort=True,
+            )
+
+        for t in tickets:
+            trk.delete_ticket(t.id)
+            click.echo(f"  ✓ Deleted {t.id} ({t.title})")
+
+        click.echo(f"✓ Deleted {len(tickets)} tickets from phase '{phase}'.")
+
+
 @main.command("new-project")
 @click.argument("name")
 def new_project(name):

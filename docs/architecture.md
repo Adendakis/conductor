@@ -83,11 +83,34 @@ of tickets per workpackage discovered.
 
 For parallel pod execution on the same machine:
 
-1. Each pod gets a git worktree (`worktrees/pod-a/`)
-2. Agents write deliverables into the worktree
-3. After pod completes, merge branch back to main
-4. If merge conflicts: ticket → FAILED, human resolves
-5. Cleanup: remove worktree and delete branch
+1. A phase with `post_phase_hook: "setup_and_execute_pods"` completes
+2. The watcher reads `Pod_Assignment.json` (generic format)
+3. Each pod gets a git worktree (`worktrees/pod-a/`) on branch `pod/pod-a`
+4. Each workpackage gets a sub-branch (`wp/pod-a/WP-001`)
+5. WPs within a pod execute sequentially; pods execute in parallel
+6. After each WP completes → merge WP branch to pod branch
+7. After all pods complete → merge pods to main (respecting `merge_order`)
+8. Cleanup: remove worktrees and delete branches
+
+**Generic Pod Assignment format** (what conductor reads):
+
+```json
+{
+  "pods": {
+    "pod-a": { "workpackages": ["WP-001", "WP-002"] },
+    "pod-b": { "workpackages": ["WP-003", "WP-006"] }
+  },
+  "merge_order": [["pod-a", "pod-b"]]
+}
+```
+
+Extra fields in pod objects are ignored — project-specific agents can include
+whatever metadata they need. The `merge_order` field is optional; if absent,
+pods merge in any order.
+
+**Merge conflict handling**: WP→pod conflict marks the ticket FAILED with the
+conflicted file list. Pod→main conflict stops further merges and marks the
+relevant ticket FAILED. In both cases the merge is aborted and the repo stays clean.
 
 ## Plugin Architecture
 

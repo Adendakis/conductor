@@ -68,7 +68,7 @@ class WatcherConfig(BaseModel):
     pipeline_file: str = ""  # Path to pipeline.yaml (if using YAML loader)
     agents_module: str = ""  # Python module path with register() function
 
-    poll_interval_seconds: int = 30
+    poll_interval_seconds: int = 10
     max_concurrent_agents: int = 3
 
     hitl_default: bool = True
@@ -82,6 +82,10 @@ class WatcherConfig(BaseModel):
     git_enabled: bool = True
     git_tag_on_transitions: bool = True
     git_commit_on_completion: bool = True
+
+    # Pod worktree paths
+    worktrees_directory: str = "worktrees"  # Relative to project base path
+    pod_assignment_path: str = "output/analysis/workpackages/Pod_Assignment.json"
 
     # Logging
     log_level: str = "INFO"

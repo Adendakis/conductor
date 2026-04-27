@@ -69,6 +69,19 @@ and moves tickets through the lifecycle.
 conductor init --reset    # Wipes the board and starts fresh
 ```
 
+## Delete Individual Tickets
+
+```bash
+conductor ticket delete COND-004              # delete one ticket (asks for confirmation)
+conductor ticket delete COND-004 -y           # skip confirmation
+conductor ticket delete --phase phase_3       # delete all tickets in a phase
+conductor ticket delete --phase phase_3 -y    # skip confirmation
+```
+
+Deleting a ticket removes its comments, status history, metrics, and dependency
+links. Other tickets that depended on the deleted ticket will have those links
+removed.
+
 ## Try the Full Demo
 
 For a richer example with parallel workpackages and human review gates:

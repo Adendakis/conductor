@@ -70,3 +70,8 @@ class TrackerBackend(ABC):
     ) -> None:
         """Create a dependency link between tickets."""
         ...
+
+    @abstractmethod
+    def delete_ticket(self, ticket_id: str) -> None:
+        """Delete a ticket and all its associated data (comments, links, history)."""
+        ...

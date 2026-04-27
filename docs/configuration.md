@@ -122,7 +122,7 @@ an LLM must create their own provider internally.
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `poll_interval_seconds` | 30 | Seconds between poll cycles |
+| `poll_interval_seconds` | 10 | Seconds between poll cycles |
 | `max_concurrent_agents` | 3 | Max agents running simultaneously (async watcher) |
 | `hitl_default` | true | Default HITL setting for all tickets |
 | `hitl_override_phases` | {} | Per-phase HITL override: `{"phase_1": false}` |
@@ -133,6 +133,8 @@ an LLM must create their own provider internally.
 | `git_enabled` | true | Enable git tagging and commits |
 | `git_tag_on_transitions` | true | Create git tags on status changes |
 | `git_commit_on_completion` | true | Commit deliverables after agent completes |
+| `worktrees_directory` | `worktrees` | Directory for pod worktrees (relative to project base) |
+| `pod_assignment_path` | `output/analysis/workpackages/Pod_Assignment.json` | Path to pod assignment JSON |
 
 ## HITL (Human-in-the-Loop) Configuration
 

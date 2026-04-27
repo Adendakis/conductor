@@ -10,6 +10,7 @@ from conductor.executor.base import ExecutionContext, ExecutionResult
 from conductor.executor.registry import AgentRegistry
 from conductor.executor.reviewer_executor import ReviewerExecutor
 from conductor.git.manager import GitManager
+from conductor.git.worktree_manager import WorktreeManager
 from conductor.models.config import ProjectConfig, WatcherConfig
 from conductor.models.enums import TicketStatus, TicketType
 from conductor.models.ticket import Ticket
@@ -48,6 +49,7 @@ class AsyncEventWatcher:
         self._semaphore: Optional[asyncio.Semaphore] = None
         self._in_flight: Set[str] = set()
         self._pipeline = pipeline or []  # list[PhaseDefinition]
+        self._worktree_manager: Optional[WorktreeManager] = None
 
     def run(self) -> None:
         """Start the async event loop."""
@@ -131,6 +133,16 @@ class AsyncEventWatcher:
                 executor = self.registry.get(agent_name)
                 context = self._build_context(ticket)
 
+                # Checkout WP branch if this is a pod-scoped ticket
+                if (
+                    ticket.metadata.pod
+                    and ticket.metadata.workpackage
+                    and self._worktree_manager
+                ):
+                    self._worktree_manager.checkout_wp_branch(
+                        ticket.metadata.workpackage, ticket.metadata.pod
+                    )
+
                 # Execute in a thread (executors are synchronous)
                 try:
                     result = await asyncio.to_thread(
@@ -169,10 +181,18 @@ class AsyncEventWatcher:
 
         # Git commit
         if self.config.git_commit_on_completion and result.deliverables_produced:
-            self.git.commit_deliverables(
-                result.deliverables_produced,
-                f"conductor/{ticket.id}: {ticket.title}",
-            )
+            if ticket.metadata.pod and self._worktree_manager:
+                # Commit in worktree on the WP branch
+                self._worktree_manager.commit_in_pod(
+                    ticket.metadata.pod,
+                    result.deliverables_produced,
+                    f"conductor/{ticket.id}: {ticket.title}",
+                )
+            else:
+                self.git.commit_deliverables(
+                    result.deliverables_produced,
+                    f"conductor/{ticket.id}: {ticket.title}",
+                )
 
         # Git tag completed
         if self.config.git_tag_on_transitions:
@@ -213,6 +233,10 @@ class AsyncEventWatcher:
             self.git.tag(f"conductor/{ticket.id}/approved")
         self.tracker.update_status(ticket.id, TicketStatus.DONE)
         log.info(f"{ticket.id} → DONE (approved)")
+
+        # Merge WP branch to pod branch if this is the last step for this WP
+        self._try_merge_wp_to_pod(ticket)
+
         unblock_dependents(ticket, self.tracker)
         self._check_phase_completion(ticket)
 
@@ -272,6 +296,10 @@ class AsyncEventWatcher:
             self.git.tag(f"conductor/{ticket.id}/approved")
         self.tracker.update_status(ticket.id, TicketStatus.DONE)
         log.info(f"DONE (auto-approved)")
+
+        # Merge WP branch to pod branch if this is the last step for this WP
+        self._try_merge_wp_to_pod(ticket)
+
         unblock_dependents(ticket, self.tracker)
         self._check_phase_completion(ticket)
 
@@ -298,6 +326,47 @@ class AsyncEventWatcher:
             workpackage_id=ticket.metadata.workpackage,
             pod_id=ticket.metadata.pod,
         )
+
+    def _try_merge_wp_to_pod(self, ticket: Ticket) -> None:
+        """Merge WP branch to pod branch if this is the last step for this WP.
+
+        Only triggers when all tickets for this WP in this phase are DONE.
+        """
+        if not ticket.metadata.pod or not ticket.metadata.workpackage:
+            return
+        if not self._worktree_manager:
+            return
+
+        wp_id = ticket.metadata.workpackage
+        pod_id = ticket.metadata.pod
+        phase_id = ticket.metadata.phase
+
+        # Check if all tickets for this WP in this phase are DONE
+        phase_tickets = self.tracker.get_tickets_by_metadata(phase=phase_id)
+        wp_tickets = [
+            t for t in phase_tickets
+            if t.metadata.workpackage == wp_id and t.metadata.pod == pod_id
+        ]
+        all_done = all(t.status == TicketStatus.DONE for t in wp_tickets)
+
+        if not all_done:
+            return
+
+        log.info(f"All tickets for {wp_id} in {pod_id} are DONE — merging WP→pod")
+        result = self._worktree_manager.merge_wp_to_pod(wp_id, pod_id)
+
+        if not result.success:
+            # Mark the last ticket as FAILED with conflict info
+            self.tracker.update_status(ticket.id, TicketStatus.FAILED)
+            self.tracker.add_comment(
+                ticket.id,
+                f"⚠ WP→pod merge conflict for {wp_id} in {pod_id}:\n"
+                f"Conflicted files: {', '.join(result.conflicted_files)}\n"
+                f"Error: {result.error}",
+            )
+            log.error(
+                f"WP→pod merge failed: {wp_id} → {pod_id}: {result.error}"
+            )
 
     def _handle_stale_tickets(self) -> None:
         """Reset tickets stuck in IN_PROGRESS."""
@@ -326,7 +395,7 @@ class AsyncEventWatcher:
                 continue
 
     def _check_phase_completion(self, completed_ticket: Ticket) -> None:
-        """Check if all tickets in a phase are DONE. If so, create next phase tickets."""
+        """Check if all tickets in a phase are DONE. If so, handle hooks and create next phase tickets."""
         if not self._pipeline:
             return
 
@@ -341,7 +410,7 @@ class AsyncEventWatcher:
                 phase_def = p
                 break
 
-        if not phase_def or not phase_def.creates_next_phases:
+        if not phase_def:
             return
 
         # Check if ALL tickets in this phase are DONE
@@ -351,7 +420,44 @@ class AsyncEventWatcher:
         if not all_done:
             return
 
-        # Find next phase definitions
+        log.info(f"Phase '{phase_id}' complete — all tickets DONE")
+
+        # --- Pod→main merge if this was a pod-scoped phase ---
+        if self._worktree_manager and self._worktree_manager.get_all_pod_ids():
+            # Check if any tickets in this phase had pods
+            has_pods = any(t.metadata.pod for t in phase_tickets)
+            if has_pods:
+                log.info(f"Merging pods to main for phase '{phase_id}'")
+                merge_results = self._worktree_manager.merge_pods_to_main()
+                for result in merge_results:
+                    if not result.success:
+                        # Find a ticket from this pod to mark as FAILED
+                        for t in phase_tickets:
+                            pod_branch = f"pod/{t.metadata.pod}"
+                            if pod_branch == result.branch:
+                                self.tracker.update_status(
+                                    t.id, TicketStatus.FAILED
+                                )
+                                self.tracker.add_comment(
+                                    t.id,
+                                    f"⚠ Pod→main merge conflict for {result.branch}:\n"
+                                    f"Conflicted files: {', '.join(result.conflicted_files)}\n"
+                                    f"Error: {result.error}",
+                                )
+                                break
+                        log.error(
+                            f"Pod→main merge failed: {result.branch}: {result.error}"
+                        )
+                        return  # Stop — don't create next phase tickets
+
+        # --- Post-phase hook ---
+        if phase_def.post_phase_hook == "setup_and_execute_pods":
+            self._execute_pod_setup_hook(phase_def)
+
+        # --- Create next phase tickets ---
+        if not phase_def.creates_next_phases:
+            return
+
         next_phases = [
             p for p in self._pipeline
             if p.phase_id in phase_def.creates_next_phases
@@ -360,14 +466,16 @@ class AsyncEventWatcher:
         if not next_phases:
             return
 
-        # Create tickets for next phases
         from conductor.watcher.ticket_creator import DynamicTicketCreator
 
         creator = DynamicTicketCreator(
             working_directory=self.project_config.project_base_path
         )
         created_ids = creator.create_scoped_tickets(
-            completed_ticket, next_phases, self.tracker
+            completed_ticket,
+            next_phases,
+            self.tracker,
+            worktree_manager=self._worktree_manager,
         )
 
         if created_ids:
@@ -375,3 +483,42 @@ class AsyncEventWatcher:
                 f"Phase '{phase_id}' complete → created {len(created_ids)} "
                 f"tickets for {[p.phase_id for p in next_phases]}"
             )
+
+    def _execute_pod_setup_hook(self, phase_def) -> None:
+        """Execute the setup_and_execute_pods post-phase hook.
+
+        1. Commit all phase outputs to main
+        2. Read Pod_Assignment.json
+        3. Create pod worktrees + WP branches
+        """
+        from pathlib import Path
+
+        # Commit phase outputs before branching
+        self.git.add_and_commit(
+            f"conductor: {phase_def.phase_id} outputs committed before pod branching"
+        )
+
+        # Find Pod_Assignment.json (configurable path)
+        pod_path = (
+            self.project_config.project_base_path
+            / self.config.pod_assignment_path
+        )
+        if not pod_path.exists():
+            log.error(f"Pod assignment not found: {pod_path}")
+            return
+
+        # Create worktree manager if not already present
+        if not self._worktree_manager:
+            worktrees_base = (
+                self.project_config.project_base_path
+                / self.config.worktrees_directory
+            )
+            self._worktree_manager = WorktreeManager(
+                git=self.git, worktrees_base=worktrees_base
+            )
+
+        # Setup worktrees
+        pod_worktrees = self._worktree_manager.setup_pod_worktrees(pod_path)
+        log.info(
+            f"Pod setup complete: {len(pod_worktrees)} worktrees created"
+        )

@@ -26,8 +26,17 @@ class BedrockProvider(LLMProvider):
 
     def __init__(self, region: str = "us-east-1"):
         import boto3
+        from botocore.config import Config
 
-        self.client = boto3.client("bedrock-runtime", region_name=region)
+        # Increase read timeout for large LLM responses (default 60s is too short
+        # for generating 64K token outputs like Value_Streams.json).
+        # Matches OLD_PYACM timeout: read=900s, connect=30s.
+        config = Config(
+            read_timeout=900,   # 15 minutes — matches old orchestrator
+            connect_timeout=30,
+            retries={"max_attempts": 0},  # we handle retries ourselves
+        )
+        self.client = boto3.client("bedrock-runtime", region_name=region, config=config)
         self.region = region
 
     def call(
@@ -163,15 +172,18 @@ class BedrockProvider(LLMProvider):
 
             # --- Sliding window history management ---
             if model_config.history_strategy != "none":
-                estimated = self._estimate_message_tokens(messages)
-                if estimated > model_config.history_trigger_tokens:
+                # Use actual Bedrock token count (more accurate than char estimate)
+                if total_input_tokens > model_config.history_trigger_tokens:
+                    estimated_before = self._estimate_message_tokens(messages)
                     messages = self._truncate_history(
                         messages, model_config.history_keep_tokens
                     )
+                    estimated_after = self._estimate_message_tokens(messages)
                     log.info(
-                        "  ✂️  History truncated: ~%d tokens → ~%d tokens (keep=%d)",
-                        estimated,
-                        self._estimate_message_tokens(messages),
+                        "  ✂️  History truncated: actual_in=%d, est ~%d → ~%d tokens (keep=%d)",
+                        total_input_tokens,
+                        estimated_before,
+                        estimated_after,
                         model_config.history_keep_tokens,
                     )
 
