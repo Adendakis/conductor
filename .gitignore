@@ -23,7 +23,14 @@ env/
 
 # Conductor runtime state
 .conductor/tracker.db
+.conductor/tracker.db-shm
+.conductor/tracker.db-wal
+.conductor/conductor.log
 output/
+**/tracker.db
+**/tracker.db-shm
+**/tracker.db-wal
+**/conductor.log
 
 # Testing
 .pytest_cache/
