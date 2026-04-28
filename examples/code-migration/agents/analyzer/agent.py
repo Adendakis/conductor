@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
+from conductor.models.metrics import StepMetrics
 from conductor.models.ticket import Ticket
 
 
@@ -15,6 +16,7 @@ class DemoAnalyzerAgent(AgentExecutor):
         return "demo_analyzer"
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
+        start = time.time()
         time.sleep(8)
 
         created = []
@@ -57,4 +59,14 @@ class DemoAnalyzerAgent(AgentExecutor):
             success=True,
             summary=f"Analysis complete: {len(created)} report(s) generated",
             deliverables_produced=created,
+            metrics=StepMetrics(
+                step_id=ticket.metadata.step,
+                agent_name=self.agent_name,
+                model_id="demo-simulated",
+                input_tokens=12500,
+                output_tokens=3200,
+                requests=1,
+                elapsed_seconds=time.time() - start,
+                cost_usd=0.0855,
+            ),
         )

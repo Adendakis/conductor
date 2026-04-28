@@ -205,9 +205,23 @@ class AsyncEventWatcher:
         if result.summary:
             self.tracker.add_comment(ticket.id, result.summary[:2000])
 
-        # Metrics
+        # Metrics — log, store, and add as ticket comment
         if result.metrics:
             log.info(f"{result.metrics.to_log_line()}")
+            # Store in metrics table
+            if hasattr(self.tracker, 'store_metrics'):
+                self.tracker.store_metrics(ticket.id, result.metrics)
+            # Add as ticket comment for visibility
+            m = result.metrics
+            metrics_comment = (
+                f"📊 **Execution Metrics**\n"
+                f"- Model: {m.model_id}\n"
+                f"- Tokens: {m.input_tokens:,} in / {m.output_tokens:,} out\n"
+                f"- Requests: {m.requests}\n"
+                f"- Runtime: {m.elapsed_seconds:.1f}s\n"
+                f"- Cost: ${m.cost_usd:.4f}"
+            )
+            self.tracker.add_comment(ticket.id, metrics_comment)
 
         # Reviewer handling
         if isinstance(executor, ReviewerExecutor):

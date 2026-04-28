@@ -322,3 +322,106 @@ textarea:focus { outline: none; border-color: var(--accent); }
   max-height: 85vh;
   overflow-y: auto;
 }
+
+/* Tab bar */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  padding: 0 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Tab content */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Table view */
+.table-container {
+  padding: 16px;
+  overflow-x: auto;
+}
+.ticket-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ticket-table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 2px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.ticket-table th:hover { color: var(--text-primary); }
+.ticket-table th .sort-arrow { font-size: 10px; margin-left: 4px; }
+.ticket-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ticket-table tr { cursor: pointer; transition: background 0.1s; }
+.ticket-table tr:hover { background: var(--bg-tertiary); }
+
+/* Status badges in table */
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.status-badge.s-ready { background: rgba(88,166,255,0.15); color: var(--info); }
+.status-badge.s-in_progress { background: rgba(210,153,34,0.15); color: var(--warning); }
+.status-badge.s-awaiting_review { background: rgba(188,140,255,0.15); color: var(--purple); }
+.status-badge.s-done { background: rgba(63,185,80,0.15); color: var(--success); }
+.status-badge.s-failed { background: rgba(248,81,73,0.15); color: var(--danger); }
+.status-badge.s-rejected { background: rgba(248,81,73,0.15); color: var(--danger); }
+.status-badge.s-backlog { background: rgba(110,118,129,0.15); color: var(--text-muted); }
+.status-badge.s-paused { background: rgba(110,118,129,0.15); color: var(--text-muted); }
+.status-badge.s-approved { background: rgba(63,185,80,0.15); color: var(--success); }
+
+/* Table search */
+.table-search {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  font-size: 13px;
+  width: 250px;
+}
+.table-search:focus { outline: none; border-color: var(--accent); }
+
+/* Kanban overflow indicator */
+.column-overflow {
+  text-align: center;
+  padding: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.column-overflow:hover { color: var(--accent); }

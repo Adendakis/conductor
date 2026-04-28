@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
+from conductor.models.metrics import StepMetrics
 from conductor.models.ticket import Ticket
 
 
@@ -16,6 +17,7 @@ class DemoPlannerAgent(AgentExecutor):
         return "demo_planner"
 
     def execute(self, ticket: Ticket, context: ExecutionContext) -> ExecutionResult:
+        start = time.time()
         time.sleep(10)
 
         planning = {
@@ -36,4 +38,14 @@ class DemoPlannerAgent(AgentExecutor):
             success=True,
             summary="Workpackage planning complete: 3 workpackages defined (Users, Posts, Comments)",
             deliverables_produced=[path_str],
+            metrics=StepMetrics(
+                step_id=ticket.metadata.step,
+                agent_name=self.agent_name,
+                model_id="demo-simulated",
+                input_tokens=8400,
+                output_tokens=2100,
+                requests=1,
+                elapsed_seconds=time.time() - start,
+                cost_usd=0.0567,
+            ),
         )

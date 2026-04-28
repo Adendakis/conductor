@@ -10,18 +10,30 @@
   "paused": "Paused"
 } %}
 
-{% set visible_statuses = ["ready", "in_progress", "awaiting_review", "approved", "done", "failed", "backlog", "rejected", "paused"] %}
+{% set visible_statuses = ["backlog", "ready", "in_progress", "failed", "awaiting_review", "done", "paused"] %}
+
+{# Columns that show oldest first (longest waiting = most urgent) #}
+{% set oldest_first = ["awaiting_review", "ready", "backlog"] %}
+
+{% set max_cards = 10 %}
 
 {% for status in visible_statuses %}
-{% set tickets = columns.get(status, []) %}
-<div class="column{% if not tickets %} column-empty{% endif %}">
+{% set all_tickets = columns.get(status, []) %}
+{% set total = all_tickets|length %}
+{# Sort: oldest first for actionable columns, newest first for others #}
+{% if status in oldest_first %}
+{% set display_tickets = all_tickets[:max_cards] %}
+{% else %}
+{% set display_tickets = all_tickets[-max_cards:]|reverse|list if total > max_cards else all_tickets %}
+{% endif %}
+<div class="column{% if not all_tickets %} column-empty{% endif %}">
   <div class="column-header">
     {{ status_labels.get(status, status) }}
-    <span class="count">{{ tickets|length }}</span>
+    <span class="count">{{ total }}</span>
   </div>
   <div class="column-body">
-    {% if tickets %}
-      {% for ticket in tickets %}
+    {% if display_tickets %}
+      {% for ticket in display_tickets %}
       <div class="card status-{{ status }}" onclick="showTicket('{{ ticket.id }}')">
         <div class="card-id">{{ ticket.id }}
           <span class="utc-time" data-utc="{{ ticket.updated_at or '' }}" style="float:right; color:var(--text-muted);"></span>
@@ -43,6 +55,11 @@
         </div>
       </div>
       {% endfor %}
+      {% if total > max_cards %}
+      <div class="column-overflow" onclick="document.getElementById('filter-status').value='{{ status }}'; refreshBoard();">
+        + {{ total - max_cards }} more — click to filter
+      </div>
+      {% endif %}
     {% else %}
       <div class="empty">No tickets</div>
     {% endif %}

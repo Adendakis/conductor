@@ -1,0 +1,44 @@
+<div class="table-container">
+  <table class="ticket-table" id="ticket-table">
+    <thead>
+      <tr>
+        <th data-col="id" onclick="sortTable('id')">ID <span class="sort-arrow"></span></th>
+        <th data-col="status" onclick="sortTable('status')">Status <span class="sort-arrow"></span></th>
+        <th data-col="title" onclick="sortTable('title')">Title <span class="sort-arrow"></span></th>
+        <th data-col="phase" onclick="sortTable('phase')">Phase <span class="sort-arrow"></span></th>
+        <th data-col="workpackage" onclick="sortTable('workpackage')">WP <span class="sort-arrow"></span></th>
+        <th data-col="pod" onclick="sortTable('pod')">Pod <span class="sort-arrow"></span></th>
+        <th data-col="agent" onclick="sortTable('agent')">Agent <span class="sort-arrow"></span></th>
+        <th data-col="iteration" onclick="sortTable('iteration')">Iter <span class="sort-arrow"></span></th>
+        <th data-col="updated" onclick="sortTable('updated')">Updated <span class="sort-arrow"></span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ticket in tickets %}
+      <tr onclick="showTicket('{{ ticket.id }}')" class="table-row"
+          data-id="{{ ticket.id }}"
+          data-status="{{ ticket.status.value }}"
+          data-title="{{ ticket.title }}"
+          data-phase="{{ ticket.metadata.phase or '' }}"
+          data-workpackage="{{ ticket.metadata.workpackage or '' }}"
+          data-pod="{{ ticket.metadata.pod or '' }}"
+          data-agent="{{ ticket.metadata.agent_name or '' }}"
+          data-iteration="{{ ticket.metadata.iteration }}"
+          data-updated="{{ ticket.updated_at or '' }}">
+        <td><code>{{ ticket.id }}</code></td>
+        <td><span class="status-badge s-{{ ticket.status.value }}">{{ ticket.status.value }}</span></td>
+        <td>{{ ticket.title }}</td>
+        <td>{{ ticket.metadata.phase or '—' }}</td>
+        <td>{{ ticket.metadata.workpackage or '—' }}</td>
+        <td>{{ ticket.metadata.pod or '—' }}</td>
+        <td>{{ ticket.metadata.agent_name[:20] if ticket.metadata.agent_name else '—' }}</td>
+        <td>{{ ticket.metadata.iteration }}</td>
+        <td><span class="utc-time" data-utc="{{ ticket.updated_at or '' }}"></span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not tickets %}
+  <div class="empty" style="padding:40px;">No tickets found.</div>
+  {% endif %}
+</div>

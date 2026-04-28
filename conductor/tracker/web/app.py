@@ -151,6 +151,10 @@ def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
             phases[phase] = phases.get(phase, 0) + 1
         stats["by_phase"] = phases
 
+        # Aggregate metrics (runtime + cost)
+        if hasattr(tracker, 'get_aggregate_metrics'):
+            stats["metrics"] = tracker.get_aggregate_metrics()
+
         return stats
 
     # --- HTMX Partials ---
@@ -199,6 +203,37 @@ def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
         return templates.TemplateResponse(
             "partials/ticket_panel.html",
             {"request": request, "ticket": ticket},
+        )
+
+    @app.get("/partials/table", response_class=HTMLResponse)
+    async def partial_table(
+        request: Request,
+        phase: Optional[str] = None,
+        workpackage: Optional[str] = None,
+        status: Optional[str] = None,
+    ):
+        """HTMX partial: table view of all tickets."""
+        if status:
+            tickets = tracker.get_tickets_by_status(TicketStatus(status))
+            if phase:
+                tickets = [t for t in tickets if t.metadata.phase == phase]
+            if workpackage:
+                tickets = [t for t in tickets if t.metadata.workpackage == workpackage]
+        elif phase or workpackage:
+            kwargs = {}
+            if phase:
+                kwargs["phase"] = phase
+            if workpackage:
+                kwargs["workpackage"] = workpackage
+            tickets = tracker.get_tickets_by_metadata(**kwargs)
+        else:
+            tickets = []
+            for s in TicketStatus:
+                tickets.extend(tracker.get_tickets_by_status(s))
+
+        return templates.TemplateResponse(
+            "partials/table_view.html",
+            {"request": request, "tickets": tickets},
         )
 
     @app.post("/partials/ticket/{ticket_id}/approve", response_class=HTMLResponse)

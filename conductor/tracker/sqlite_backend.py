@@ -306,6 +306,43 @@ class SqliteTracker(TrackerBackend):
         )
         self._conn.commit()
 
+    def store_metrics(self, ticket_id: str, metrics: "StepMetrics") -> None:
+        """Store execution metrics for a ticket."""
+        from conductor.models.metrics import StepMetrics
+        self._conn.execute(
+            """INSERT INTO step_metrics (
+                ticket_id, step_id, agent_name, model_id,
+                input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
+                requests, elapsed_seconds, cost_usd
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                ticket_id, metrics.step_id, metrics.agent_name, metrics.model_id,
+                metrics.input_tokens, metrics.output_tokens,
+                metrics.cache_write_tokens, metrics.cache_read_tokens,
+                metrics.requests, metrics.elapsed_seconds, metrics.cost_usd,
+            ),
+        )
+        self._conn.commit()
+
+    def get_aggregate_metrics(self) -> dict:
+        """Get aggregate metrics across all executions."""
+        row = self._conn.execute(
+            """SELECT
+                COALESCE(SUM(elapsed_seconds), 0) as total_elapsed,
+                COALESCE(SUM(cost_usd), 0) as total_cost,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COUNT(*) as total_executions
+            FROM step_metrics"""
+        ).fetchone()
+        return {
+            "total_elapsed_seconds": row["total_elapsed"],
+            "total_cost_usd": row["total_cost"],
+            "total_input_tokens": row["total_input_tokens"],
+            "total_output_tokens": row["total_output_tokens"],
+            "total_executions": row["total_executions"],
+        }
+
     def delete_ticket(self, ticket_id: str) -> None:
         """Delete a ticket and all associated data."""
         # Verify ticket exists

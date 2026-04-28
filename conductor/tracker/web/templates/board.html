@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Conductor — Board</title>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=4">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
 <body>
@@ -18,15 +18,22 @@
     </div>
   </div>
 
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('kanban')">Board</button>
+    <button class="tab-btn" onclick="switchTab('table')">Table</button>
+  </div>
+
+  <!-- Filters (shared by both views) -->
   <div class="filters">
     <span>Filter:</span>
-    <select id="filter-phase" onchange="refreshBoard()">
+    <select id="filter-phase" onchange="refreshView()">
       <option value="">All Phases</option>
     </select>
-    <select id="filter-workpackage" onchange="refreshBoard()">
+    <select id="filter-workpackage" onchange="refreshView()">
       <option value="">All Workpackages</option>
     </select>
-    <select id="filter-status" onchange="refreshBoard()">
+    <select id="filter-status" onchange="refreshView()">
       <option value="">All Statuses</option>
       <option value="backlog">Backlog</option>
       <option value="ready">Ready</option>
@@ -37,27 +44,64 @@
       <option value="paused">Paused</option>
     </select>
     <button class="btn" onclick="clearFilters()">✕ Clear</button>
-    <button class="btn" onclick="refreshBoard()">↻ Refresh</button>
+    <button class="btn" onclick="refreshView()">↻ Refresh</button>
     <span style="margin-left:auto;"></span>
+    <!-- Table search (only visible in table tab) -->
+    <input type="text" id="table-search" class="table-search" placeholder="Search tickets..."
+           oninput="filterTableRows()" style="display:none;">
+    <!-- Compact toggle (only visible in kanban tab) -->
     <button id="compact-toggle" class="btn" onclick="toggleCompact()">▣ Compact</button>
   </div>
 
-  <div id="board-container" class="board"
-       hx-get="/partials/board" hx-trigger="load" hx-swap="innerHTML">
-    <div class="empty">Loading board...</div>
+  <!-- Kanban tab -->
+  <div id="tab-kanban" class="tab-content active">
+    <div id="board-container" class="board"
+         hx-get="/partials/board" hx-trigger="load" hx-swap="innerHTML">
+      <div class="empty">Loading board...</div>
+    </div>
+  </div>
+
+  <!-- Table tab -->
+  <div id="tab-table" class="tab-content">
+    <div id="table-container"
+         hx-get="/partials/table" hx-trigger="load" hx-swap="innerHTML">
+      <div class="empty">Loading table...</div>
+    </div>
   </div>
 
   <!-- Ticket detail modal -->
   <div id="ticket-modal"></div>
 
   <script>
+    // --- Current tab ---
+    var currentTab = localStorage.getItem('conductor-tab') || 'kanban';
+
+    function switchTab(tab) {
+      currentTab = tab;
+      localStorage.setItem('conductor-tab', tab);
+
+      // Update tab buttons
+      document.querySelectorAll('.tab-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.textContent.trim().toLowerCase() === (tab === 'kanban' ? 'board' : 'table'));
+      });
+
+      // Show/hide tab content
+      document.getElementById('tab-kanban').classList.toggle('active', tab === 'kanban');
+      document.getElementById('tab-table').classList.toggle('active', tab === 'table');
+
+      // Show/hide tab-specific controls
+      document.getElementById('table-search').style.display = tab === 'table' ? '' : 'none';
+      document.getElementById('compact-toggle').style.display = tab === 'kanban' ? '' : 'none';
+
+      refreshView();
+    }
+
     // --- UTC → local time conversion ---
     function convertUtcTimestamps(root) {
       (root || document).querySelectorAll('.utc-time').forEach(function(el) {
         var utc = el.getAttribute('data-utc');
         if (!utc) { el.textContent = '—'; return; }
         try {
-          // Ensure the string is parsed as UTC
           if (!utc.endsWith('Z') && !utc.includes('+')) utc += 'Z';
           var d = new Date(utc);
           if (isNaN(d.getTime())) { el.textContent = utc.slice(0, 16); return; }
@@ -70,69 +114,65 @@
       });
     }
 
-    // Convert on initial page load
-    document.addEventListener('DOMContentLoaded', function() {
-      convertUtcTimestamps(document);
-    });
-
-    // Populate filter dropdowns on load
+    // --- Filters ---
     async function loadFilters() {
-      const resp = await fetch('/api/tickets');
-      const tickets = await resp.json();
+      var resp = await fetch('/api/tickets');
+      var tickets = await resp.json();
+      var phases = [...new Set(tickets.map(function(t){return t.metadata.phase}).filter(Boolean))].sort();
+      var wps = [...new Set(tickets.map(function(t){return t.metadata.workpackage}).filter(Boolean))].sort();
 
-      const phases = [...new Set(tickets.map(t => t.metadata.phase).filter(Boolean))].sort();
-      const wps = [...new Set(tickets.map(t => t.metadata.workpackage).filter(Boolean))].sort();
-
-      const phaseSelect = document.getElementById('filter-phase');
-      phases.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p;
-        opt.textContent = p;
+      var phaseSelect = document.getElementById('filter-phase');
+      phases.forEach(function(p) {
+        var opt = document.createElement('option');
+        opt.value = p; opt.textContent = p;
         phaseSelect.appendChild(opt);
       });
-
-      const wpSelect = document.getElementById('filter-workpackage');
-      wps.forEach(w => {
-        const opt = document.createElement('option');
-        opt.value = w;
-        opt.textContent = w;
+      var wpSelect = document.getElementById('filter-workpackage');
+      wps.forEach(function(w) {
+        var opt = document.createElement('option');
+        opt.value = w; opt.textContent = w;
         wpSelect.appendChild(opt);
       });
     }
     loadFilters();
 
     function getFilterParams() {
-      const phase = document.getElementById('filter-phase').value;
-      const wp = document.getElementById('filter-workpackage').value;
-      const status = document.getElementById('filter-status').value;
-      const params = new URLSearchParams();
+      var phase = document.getElementById('filter-phase').value;
+      var wp = document.getElementById('filter-workpackage').value;
+      var status = document.getElementById('filter-status').value;
+      var params = new URLSearchParams();
       if (phase) params.set('phase', phase);
       if (wp) params.set('workpackage', wp);
       if (status) params.set('status', status);
       return params.toString();
     }
 
-    function refreshBoard() {
-      const params = getFilterParams();
-      const url = '/partials/board' + (params ? '?' + params : '');
-      htmx.ajax('GET', url, {target: '#board-container', swap: 'innerHTML'});
+    function refreshView() {
+      var params = getFilterParams();
+      if (currentTab === 'kanban') {
+        var url = '/partials/board' + (params ? '?' + params : '');
+        htmx.ajax('GET', url, {target: '#board-container', swap: 'innerHTML'});
+      } else {
+        var url = '/partials/table' + (params ? '?' + params : '');
+        htmx.ajax('GET', url, {target: '#table-container', swap: 'innerHTML'});
+      }
     }
 
     function clearFilters() {
       document.getElementById('filter-phase').value = '';
       document.getElementById('filter-workpackage').value = '';
       document.getElementById('filter-status').value = '';
-      refreshBoard();
+      document.getElementById('table-search').value = '';
+      refreshView();
     }
 
-    // Auto-reload board every 5 seconds (preserves filters)
-    let autoReloadInterval = setInterval(refreshBoard, 5000);
+    // Auto-reload every 10 seconds
+    var autoReloadInterval = setInterval(refreshView, 10000);
 
     // --- Compact mode ---
     function isCompact() {
       return localStorage.getItem('conductor-compact') === '1';
     }
-
     function applyCompact() {
       var board = document.getElementById('board-container');
       var btn = document.getElementById('compact-toggle');
@@ -147,55 +187,101 @@
         btn.textContent = '▣ Compact';
       }
     }
-
     function toggleCompact() {
-      var newVal = isCompact() ? '0' : '1';
-      localStorage.setItem('conductor-compact', newVal);
+      localStorage.setItem('conductor-compact', isCompact() ? '0' : '1');
       applyCompact();
     }
-
-    // Apply compact on initial load
     applyCompact();
 
-    // Pause auto-reload when modal is open
+    // --- Table sorting ---
+    var tableSortCol = 'id';
+    var tableSortAsc = true;
+
+    function sortTable(col) {
+      if (tableSortCol === col) {
+        tableSortAsc = !tableSortAsc;
+      } else {
+        tableSortCol = col;
+        tableSortAsc = true;
+      }
+      var tbody = document.querySelector('#ticket-table tbody');
+      if (!tbody) return;
+      var rows = Array.from(tbody.querySelectorAll('tr.table-row'));
+      rows.sort(function(a, b) {
+        var va = (a.getAttribute('data-' + col) || '').toLowerCase();
+        var vb = (b.getAttribute('data-' + col) || '').toLowerCase();
+        if (va < vb) return tableSortAsc ? -1 : 1;
+        if (va > vb) return tableSortAsc ? 1 : -1;
+        return 0;
+      });
+      rows.forEach(function(row) { tbody.appendChild(row); });
+
+      // Update sort arrows
+      document.querySelectorAll('#ticket-table th .sort-arrow').forEach(function(el) {
+        el.textContent = '';
+      });
+      var th = document.querySelector('#ticket-table th[data-col="' + col + '"] .sort-arrow');
+      if (th) th.textContent = tableSortAsc ? '▲' : '▼';
+    }
+
+    // --- Table search (client-side filter) ---
+    function filterTableRows() {
+      var query = document.getElementById('table-search').value.toLowerCase();
+      document.querySelectorAll('#ticket-table tbody tr.table-row').forEach(function(row) {
+        var text = row.textContent.toLowerCase();
+        row.style.display = text.includes(query) ? '' : 'none';
+      });
+    }
+
+    // --- Ticket modal ---
     function showTicket(ticketId) {
       clearInterval(autoReloadInterval);
       htmx.ajax('GET', '/partials/ticket/' + ticketId, {target: '#ticket-modal', swap: 'innerHTML'});
     }
-
     function closeModal() {
       document.getElementById('ticket-modal').innerHTML = '';
-      refreshBoard();
-      autoReloadInterval = setInterval(refreshBoard, 5000);  // ← restarts it
+      refreshView();
+      autoReloadInterval = setInterval(refreshView, 10000);
     }
-
-    // Close modal on escape
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeModal();
     });
 
-    // Unified htmx:afterSwap handler
+    // --- Unified htmx:afterSwap ---
     document.body.addEventListener('htmx:afterSwap', function(e) {
-      // Convert UTC timestamps on any swap
       convertUtcTimestamps(e.target);
-
-      // Re-apply compact mode after board refresh
       if (e.target.id === 'board-container') {
         applyCompact();
       }
-
-      // Format stats
       if (e.target.classList.contains('stats')) {
         try {
-          const data = JSON.parse(e.target.innerText);
-          e.target.innerHTML = `${data.total} tickets | ` +
-            Object.entries(data.by_status)
-              .filter(([k,v]) => v > 0)
-              .map(([k,v]) => `${k}: ${v}`)
-              .join(' · ');
+          var data = JSON.parse(e.target.innerText);
+          var parts = [data.total + ' tickets'];
+          var statusParts = Object.entries(data.by_status)
+            .filter(function(kv) { return kv[1] > 0; })
+            .map(function(kv) { return kv[0] + ': ' + kv[1]; });
+          if (statusParts.length) parts.push(statusParts.join(' · '));
+          // Aggregate metrics
+          if (data.metrics) {
+            var m = data.metrics;
+            var secs = m.total_elapsed_seconds || 0;
+            var cost = m.total_cost_usd || 0;
+            if (secs > 0 || cost > 0) {
+              var timeStr = secs >= 3600
+                ? (secs / 3600).toFixed(1) + 'h'
+                : secs >= 60
+                  ? (secs / 60).toFixed(1) + 'm'
+                  : secs.toFixed(0) + 's';
+              parts.push('⏱ ' + timeStr + ' · $' + cost.toFixed(4));
+            }
+          }
+          e.target.innerHTML = parts.join(' | ');
         } catch(err) {}
       }
     });
+
+    // Restore tab on load
+    if (currentTab !== 'kanban') switchTab(currentTab);
   </script>
 </body>
 </html>
