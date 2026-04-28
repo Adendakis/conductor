@@ -45,7 +45,9 @@ class AsyncEventWatcher:
         self.config = config
         self.project_config = project_config
         self.llm_provider = llm_provider
-        self.validator = DeliverableValidator()
+        self.validator = DeliverableValidator(
+            custom_validators=registry.get_custom_validators()
+        )
         self._semaphore: Optional[asyncio.Semaphore] = None
         self._in_flight: Set[str] = set()
         self._pipeline = pipeline or []  # list[PhaseDefinition]
@@ -469,7 +471,8 @@ class AsyncEventWatcher:
         from conductor.watcher.ticket_creator import DynamicTicketCreator
 
         creator = DynamicTicketCreator(
-            working_directory=self.project_config.project_base_path
+            working_directory=self.project_config.project_base_path,
+            scope_discovery=self.registry.get_scope_discovery(),
         )
         created_ids = creator.create_scoped_tickets(
             completed_ticket,

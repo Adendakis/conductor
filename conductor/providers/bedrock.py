@@ -31,13 +31,30 @@ class BedrockProvider(LLMProvider):
         # Increase read timeout for large LLM responses (default 60s is too short
         # for generating 64K token outputs like Value_Streams.json).
         # Matches OLD_PYACM timeout: read=900s, connect=30s.
-        config = Config(
+        self._boto_config = Config(
             read_timeout=900,   # 15 minutes — matches old orchestrator
             connect_timeout=30,
             retries={"max_attempts": 0},  # we handle retries ourselves
         )
-        self.client = boto3.client("bedrock-runtime", region_name=region, config=config)
         self.region = region
+        self._client = None
+
+    @property
+    def client(self):
+        """Lazy-create boto3 client. Recreated on credential errors via _refresh_client()."""
+        if self._client is None:
+            self._refresh_client()
+        return self._client
+
+    def _refresh_client(self):
+        """Create a fresh boto3 client with current credentials."""
+        import boto3
+        self._client = boto3.client(
+            "bedrock-runtime",
+            region_name=self.region,
+            config=self._boto_config,
+        )
+        log.info("Bedrock client created/refreshed (region=%s)", self.region)
 
     def call(
         self,
@@ -464,7 +481,8 @@ class BedrockProvider(LLMProvider):
         """Execute a Bedrock API call with exponential backoff.
 
         Retries on throttling and transient errors.
-        Does NOT retry on validation or access errors.
+        Refreshes the boto3 client on credential/auth errors, then retries.
+        Does NOT retry on validation errors.
         """
         for attempt in range(1, model_config.retry_max_attempts + 1):
             try:
@@ -482,6 +500,27 @@ class BedrockProvider(LLMProvider):
                         "service unavailable",
                     )
                 )
+                is_auth_error = any(
+                    k in exc_str
+                    for k in (
+                        "expired",
+                        "credential",
+                        "security token",
+                        "not authorized",
+                        "access denied",
+                        "invalididentitytoken",
+                    )
+                )
+                if is_auth_error and attempt < model_config.retry_max_attempts:
+                    log.warning(
+                        "  🔑 Credential error (attempt %d/%d), refreshing client: %s",
+                        attempt, model_config.retry_max_attempts,
+                        str(exc)[:150],
+                    )
+                    self._refresh_client()
+                    wait = min(model_config.retry_base_delay ** attempt, 30)
+                    time.sleep(wait)
+                    continue
                 if is_retryable and attempt < model_config.retry_max_attempts:
                     wait = min(model_config.retry_base_delay ** attempt, 60)
                     log.warning(

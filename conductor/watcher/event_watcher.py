@@ -37,7 +37,9 @@ class EventWatcher:
         self.config = config
         self.project_config = project_config
         self.llm_provider = llm_provider
-        self.validator = DeliverableValidator()
+        self.validator = DeliverableValidator(
+            custom_validators=registry.get_custom_validators()
+        )
         self.last_poll = datetime.now(timezone.utc).isoformat()
 
     def run(self) -> None:

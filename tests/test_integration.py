@@ -12,7 +12,7 @@ def test_init_creates_tickets(tracker, git_manager):
         git=git_manager,
         pipeline_mode="minimal",
     )
-    assert len(ids) == 2
+    assert len(ids) == 1
     for ticket_id in ids:
         ticket = tracker.get_ticket(ticket_id)
         assert ticket.status == TicketStatus.READY

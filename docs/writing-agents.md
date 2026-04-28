@@ -273,6 +273,85 @@ If no agent is registered for a ticket's `agent_name`, conductor uses the
 `NoOpExecutor` fallback — it creates placeholder deliverables and succeeds.
 This lets you test pipeline structure before writing real agents.
 
+## Scope Discovery
+
+If your pipeline has phases with `scope: per_workpackage`, `per_pod`, or
+`per_domain`, you need to tell conductor how to discover those scope units.
+Implement the `ScopeDiscovery` interface:
+
+```python
+# agents/scope_discovery.py
+from pathlib import Path
+from conductor.watcher.scope_discovery import ScopeDiscovery
+
+class MyScopeDiscovery(ScopeDiscovery):
+    def discover_workpackages(self, working_directory: Path) -> list[str]:
+        """Return ordered list of workpackage IDs."""
+        # Read your project's data format
+        ...
+
+    def discover_pods(self, working_directory: Path) -> list[str]:
+        """Return ordered list of pod IDs."""
+        ...
+
+    def get_workpackage_type(self, wp_id, working_directory):
+        """Return WP type for conditional step filtering. Optional."""
+        return None
+```
+
+Register it in `agents/__init__.py`:
+
+```python
+def register(registry: AgentRegistry):
+    registry.register(MyAgent())
+    registry.set_scope_discovery(MyScopeDiscovery())
+```
+
+Conductor is generic — it doesn't know what your workpackage IDs look like,
+what file format they're stored in, or what "type" means. Your `ScopeDiscovery`
+implementation bridges your project's data formats to conductor's interface.
+
+If you don't register a `ScopeDiscovery`, conductor uses `DefaultScopeDiscovery`
+which returns empty lists — per-workpackage phases will create no tickets.
+
+See `examples/code-migration/agents/scope_discovery.py` for a complete reference
+implementation.
+
+## Custom Validators
+
+Conductor validates deliverables automatically (file existence, size, JSON/markdown
+format). For project-specific checks, register custom validators:
+
+```python
+# agents/validators.py
+from conductor.validation.validator import ValidationResult
+
+def validate_output_schema(ticket, context):
+    """Check that output matches expected schema."""
+    path = context.working_directory / ticket.metadata.deliverable_paths[0]
+    data = json.loads(path.read_text())
+    if "required_field" not in data:
+        return ValidationResult(passed=False, errors=["Missing required_field"])
+    return ValidationResult(passed=True)
+```
+
+Register in `agents/__init__.py`:
+
+```python
+def register(registry: AgentRegistry):
+    registry.register(MyAgent())
+    registry.register_validator("validate_output_schema", validate_output_schema)
+```
+
+Reference in `pipeline.yaml`:
+
+```yaml
+quality_gate:
+  custom_validators: ["validate_output_schema"]
+```
+
+See `examples/code-migration/agents/validators.py` for reference implementations.
+
 ## Prompt File
 
 The `prompt` field in `pipeline.yaml` points to a markdown file with template

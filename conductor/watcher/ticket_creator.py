@@ -12,6 +12,7 @@ from conductor.tracker.backend import TrackerBackend
 
 if TYPE_CHECKING:
     from conductor.git.worktree_manager import WorktreeManager
+    from conductor.watcher.scope_discovery import ScopeDiscovery
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +21,20 @@ class DynamicTicketCreator:
     """Creates scoped tickets when milestone phases complete.
 
     Triggered by the watcher when a phase with `creates_next_phases` completes.
-    Reads the phase's deliverables to discover scope units (workpackages, domains, pods).
+    Uses a ScopeDiscovery instance to discover scope units (workpackages, pods, etc.).
     """
 
-    def __init__(self, working_directory: Path = Path(".")):
+    def __init__(
+        self,
+        working_directory: Path = Path("."),
+        scope_discovery: "ScopeDiscovery | None" = None,
+    ):
         self.working_directory = working_directory
+        if scope_discovery is None:
+            from conductor.watcher.scope_discovery import DefaultScopeDiscovery
+            self._scope_discovery = DefaultScopeDiscovery()
+        else:
+            self._scope_discovery = scope_discovery
 
     def create_scoped_tickets(
         self,
@@ -55,7 +65,9 @@ class DynamicTicketCreator:
                     created_ids.extend(ids)
                 else:
                     # No pods: create tickets per WP (original behavior)
-                    workpackages = self._discover_workpackages()
+                    workpackages = self._scope_discovery.discover_workpackages(
+                        self.working_directory
+                    )
                     for wp_id in workpackages:
                         ids = self._create_phase_tickets(
                             phase, tracker, scope_id=wp_id, scope_type="workpackage"
@@ -63,7 +75,9 @@ class DynamicTicketCreator:
                         created_ids.extend(ids)
 
             elif phase.execution_scope == "per_domain":
-                domains = self._discover_domains()
+                domains = self._scope_discovery.discover_domains(
+                    self.working_directory
+                )
                 for domain in domains:
                     ids = self._create_phase_tickets(
                         phase, tracker, scope_id=domain, scope_type="domain"
@@ -71,7 +85,9 @@ class DynamicTicketCreator:
                     created_ids.extend(ids)
 
             elif phase.execution_scope == "per_pod":
-                pods = self._discover_pods()
+                pods = self._scope_discovery.discover_pods(
+                    self.working_directory
+                )
                 for pod_id in pods:
                     ids = self._create_phase_tickets(
                         phase, tracker, scope_id=pod_id, scope_type="pod"
@@ -100,7 +116,9 @@ class DynamicTicketCreator:
         for step in phase.steps:
             # Skip steps that don't match scope conditions
             if step.workpackage_type and scope_id:
-                wp_type = self._get_workpackage_type(scope_id)
+                wp_type = self._scope_discovery.get_workpackage_type(
+                    scope_id, self.working_directory
+                )
                 if wp_type and wp_type != step.workpackage_type:
                     continue
 
@@ -161,7 +179,9 @@ class DynamicTicketCreator:
                 for step in phase.steps:
                     # Skip steps that don't match WP type
                     if step.workpackage_type and wp_id:
-                        wp_type = self._get_workpackage_type(wp_id)
+                        wp_type = self._scope_discovery.get_workpackage_type(
+                            wp_id, self.working_directory
+                        )
                         if wp_type and wp_type != step.workpackage_type:
                             continue
 
@@ -309,73 +329,3 @@ class DynamicTicketCreator:
         result = result.replace("{domain_name}", scope_id or "")
         result = result.replace("{workpackage_id}", scope_id or "")
         return result
-
-    def _discover_workpackages(self) -> list[str]:
-        """Read Workpackage_Planning.json to get WP IDs."""
-        planning_path = (
-            self.working_directory
-            / "output/analysis/workpackages/Workpackage_Planning.json"
-        )
-        if not planning_path.exists():
-            logger.warning(f"Workpackage planning not found: {planning_path}")
-            return []
-
-        try:
-            data = json.loads(planning_path.read_text(encoding="utf-8"))
-            return [
-                f"WP-{item['workpackageId']:03d}"
-                for item in data.get("migrationSequence", [])
-            ]
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error(f"Error reading workpackage planning: {e}")
-            return []
-
-    def _discover_domains(self) -> list[str]:
-        """Discover domains from BRE v2 output directory."""
-        bre_path = self.working_directory / "input/legacy/atx/bre_v2_output"
-        if not bre_path.exists():
-            return []
-        return sorted([d.name for d in bre_path.iterdir() if d.is_dir()])
-
-    def _discover_pods(self) -> list[str]:
-        """Read Pod_Assignment.json to get pod IDs (generic format)."""
-        pod_path = (
-            self.working_directory
-            / "output/analysis/workpackages/Pod_Assignment.json"
-        )
-        if not pod_path.exists():
-            logger.warning(f"Pod assignment not found: {pod_path}")
-            return []
-
-        try:
-            data = json.loads(pod_path.read_text(encoding="utf-8"))
-            # Generic format: {"pods": {"pod-a": {...}, "pod-b": {...}}}
-            pods = data.get("pods", {})
-            if isinstance(pods, dict):
-                return list(pods.keys())
-            # Legacy format: {"pods": [{"podId": "pod-a"}, ...]}
-            if isinstance(pods, list):
-                return [pod["podId"] for pod in pods if "podId" in pod]
-            return []
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error(f"Error reading pod assignment: {e}")
-            return []
-
-    def _get_workpackage_type(self, wp_id: str) -> Optional[str]:
-        """Get the type of a workpackage (flow, job, etc.)."""
-        planning_path = (
-            self.working_directory
-            / "output/analysis/workpackages/Workpackage_Planning.json"
-        )
-        if not planning_path.exists():
-            return None
-
-        try:
-            data = json.loads(planning_path.read_text(encoding="utf-8"))
-            for item in data.get("migrationSequence", []):
-                item_id = f"WP-{item['workpackageId']:03d}"
-                if item_id == wp_id:
-                    return item.get("type")
-        except (json.JSONDecodeError, KeyError):
-            pass
-        return None

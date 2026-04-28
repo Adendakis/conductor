@@ -6,24 +6,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class LegacySystem(BaseModel):
-    """Description of the legacy system being migrated."""
-
-    language: str = "COBOL"
-    framework: str = "CICS"
-    platform: str = "z/OS Mainframe"
-    database: str = "VSAM"
-
-
-class TargetSystem(BaseModel):
-    """Description of the target system."""
-
-    language: str = "Java"
-    framework: str = "Spring Boot"
-    platform: str = "Cloud Native"
-    database: str = "PostgreSQL"
-
-
 class ProjectConfig(BaseModel):
     """Project-level configuration. Loaded from project-config.json."""
 
@@ -31,31 +13,17 @@ class ProjectConfig(BaseModel):
     project_base_path: Path = Path(".")
     output_base_path: Optional[Path] = None
 
-    source_code: Path = Path("input/legacy/legacy_code")
-    database_source: Optional[Path] = None
-
-    legacy_system: LegacySystem = Field(default_factory=LegacySystem)
-    target_system: TargetSystem = Field(default_factory=TargetSystem)
-
     max_pod_concurrency: int = 1
     default_model_id: str = "anthropic.claude-sonnet-4-20250514"
     aws_region: str = "us-east-1"
 
+    # Project-specific metadata — conductor doesn't interpret this.
+    # Projects put whatever they need here (legacy system info, target system, etc.)
+    project_metadata: dict = Field(default_factory=dict)
+
     @property
     def effective_output_base(self) -> Path:
         return self.output_base_path or self.project_base_path
-
-    @property
-    def source_code_analysis_output(self) -> Path:
-        return self.effective_output_base / "output" / "analysis" / "source_code"
-
-    @property
-    def database_analysis_output(self) -> Path:
-        return self.effective_output_base / "output" / "analysis" / "database"
-
-    @property
-    def workpackage_base_path(self) -> Path:
-        return self.effective_output_base / "output" / "analysis" / "workpackages"
 
 
 class WatcherConfig(BaseModel):

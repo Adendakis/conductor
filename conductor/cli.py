@@ -9,6 +9,55 @@ from conductor.models.config import ProjectConfig, WatcherConfig
 from conductor.observability.log_config import setup_logging
 
 
+def _load_watcher_config_from_yaml(project_base: Path) -> dict:
+    """Load settings from .conductor/config.yaml. Returns the raw dict."""
+    config_path = project_base / ".conductor" / "config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+        return yaml.safe_load(config_path.read_text()) or {}
+    except Exception:
+        return {}
+
+
+def _build_watcher_config(ctx: click.Context, cfg: dict) -> WatcherConfig:
+    """Build WatcherConfig from config.yaml settings + CLI overrides.
+
+    Config YAML values are used as defaults. CLI flags override when
+    explicitly passed by the user.
+    """
+    settings = cfg.get("settings", {})
+
+    # For each setting: use CLI value if explicitly passed, else config.yaml, else model default
+    def _resolve(param_name: str, yaml_key: str, default):
+        source = ctx.get_parameter_source(param_name)
+        if source == click.core.ParameterSource.COMMANDLINE:
+            return ctx.params[param_name]
+        return settings.get(yaml_key, default)
+
+    return WatcherConfig(
+        poll_interval_seconds=_resolve("poll_interval", "poll_interval_seconds", 10),
+        max_concurrent_agents=_resolve("max_concurrent", "max_concurrent_agents", 3),
+        hitl_default=not ctx.params.get("no_hitl", False) and settings.get("hitl_default", True),
+        stale_ticket_threshold_seconds=settings.get("stale_ticket_threshold_seconds", 1800),
+        agents_module=cfg.get("agents_module", ""),
+        worktrees_directory=settings.get("worktrees_directory", "worktrees"),
+        pod_assignment_path=settings.get(
+            "pod_assignment_path",
+            "output/analysis/workpackages/Pod_Assignment.json",
+        ),
+        log_level=_resolve("log_level", "log_level", "INFO"),
+        log_file=_resolve("log_file", "log_file", ".conductor/conductor.log"),
+        log_json=ctx.params.get("log_json", False) or settings.get("log_json", False),
+        git_enabled=settings.get("git_enabled", True),
+        git_tag_on_transitions=settings.get("git_tag_on_transitions", True),
+        git_commit_on_completion=settings.get("git_commit_on_completion", True),
+        hitl_override_phases=settings.get("hitl_override_phases", {}),
+        hitl_override_steps=settings.get("hitl_override_steps", {}),
+    )
+
+
 @click.group()
 @click.version_option(version="0.1.0")
 def main():
@@ -103,29 +152,30 @@ def init(project, tracker, pipeline, all_phases, workpackages, reset):
 @click.option("--log-json", is_flag=True, help="JSON console output")
 def watch(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json):
     """Start the event watcher."""
-    setup_logging(level=log_level, log_file=log_file or None, json_console=log_json)
     from conductor.executor.registry import AgentRegistry
     from conductor.git.manager import GitManager
     from conductor.tracker.sqlite_backend import SqliteTracker
     from conductor.watcher.event_watcher import EventWatcher
 
     project_config = ProjectConfig()
-    watcher_config = WatcherConfig(
-        poll_interval_seconds=poll_interval,
-        max_concurrent_agents=max_concurrent,
+    cfg = _load_watcher_config_from_yaml(project_config.project_base_path)
+    watcher_config = _build_watcher_config(
+        click.get_current_context(), cfg
     )
-    if no_hitl:
-        watcher_config.hitl_default = False
+
+    setup_logging(
+        level=watcher_config.log_level,
+        log_file=watcher_config.log_file or None,
+        json_console=watcher_config.log_json,
+    )
 
     # Setup tracker
     db_path = str(project_config.project_base_path / ".conductor" / "tracker.db")
     trk = SqliteTracker(db_path=db_path)
     trk.connect({})
 
-    # Setup components
     git = GitManager(repo_path=project_config.project_base_path)
 
-    # Build registry with fallback
     from conductor.agents import build_default_registry
     from conductor.agents.generic import NoOpExecutor
     from conductor.executor.loader import load_agents_module
@@ -133,31 +183,20 @@ def watch(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json)
     registry = build_default_registry()
     registry.set_fallback(NoOpExecutor("__fallback__"))
 
-    # Load user agents if configured
-    if watcher_config.agents_module:
+    agents_mod = watcher_config.agents_module or cfg.get("agents_module", "")
+    if agents_mod:
         load_agents_module(
-            watcher_config.agents_module,
-            registry,
+            agents_mod, registry,
             project_dir=project_config.project_base_path,
         )
-    else:
-        # Try loading from .conductor/config.yaml
-        config_path = project_config.project_base_path / ".conductor" / "config.yaml"
-        if config_path.exists():
-            try:
-                import yaml
-                cfg = yaml.safe_load(config_path.read_text())
-                agents_mod = cfg.get("agents_module", "")
-                if agents_mod:
-                    load_agents_module(
-                        agents_mod, registry,
-                        project_dir=project_config.project_base_path,
-                    )
-            except Exception:
-                pass
 
-    # Create LLM provider from config
     llm_provider = _load_provider_from_config(project_config)
+
+    click.echo(
+        f"⚙ Settings: poll={watcher_config.poll_interval_seconds}s, "
+        f"concurrent={watcher_config.max_concurrent_agents}, "
+        f"hitl={watcher_config.hitl_default}"
+    )
 
     watcher = EventWatcher(
         tracker=trk,
@@ -179,7 +218,6 @@ def watch(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json)
 @click.option("--log-json", is_flag=True, help="JSON console output")
 def watch_async(poll_interval, max_concurrent, no_hitl, log_level, log_file, log_json):
     """Start the async event watcher (concurrent agent dispatch)."""
-    setup_logging(level=log_level, log_file=log_file or None, json_console=log_json)
     from conductor.agents import build_default_registry
     from conductor.agents.generic import NoOpExecutor
     from conductor.executor.loader import load_agents_module
@@ -188,12 +226,16 @@ def watch_async(poll_interval, max_concurrent, no_hitl, log_level, log_file, log
     from conductor.watcher.async_watcher import AsyncEventWatcher
 
     project_config = ProjectConfig()
-    watcher_config = WatcherConfig(
-        poll_interval_seconds=poll_interval,
-        max_concurrent_agents=max_concurrent,
+    cfg = _load_watcher_config_from_yaml(project_config.project_base_path)
+    watcher_config = _build_watcher_config(
+        click.get_current_context(), cfg
     )
-    if no_hitl:
-        watcher_config.hitl_default = False
+
+    setup_logging(
+        level=watcher_config.log_level,
+        log_file=watcher_config.log_file or None,
+        json_console=watcher_config.log_json,
+    )
 
     db_path = str(project_config.project_base_path / ".conductor" / "tracker.db")
     trk = SqliteTracker(db_path=db_path)
@@ -205,46 +247,43 @@ def watch_async(poll_interval, max_concurrent, no_hitl, log_level, log_file, log
     registry.set_fallback(NoOpExecutor("__fallback__"))
 
     # Load user agents
-    config_path = project_config.project_base_path / ".conductor" / "config.yaml"
-    if config_path.exists():
+    agents_mod = watcher_config.agents_module or cfg.get("agents_module", "")
+    if agents_mod:
         try:
-            import yaml
-            cfg = yaml.safe_load(config_path.read_text())
-            agents_mod = cfg.get("agents_module", "")
-            if agents_mod:
-                load_agents_module(
-                    agents_mod, registry,
-                    project_dir=project_config.project_base_path,
-                )
+            load_agents_module(
+                agents_mod, registry,
+                project_dir=project_config.project_base_path,
+            )
         except Exception:
             pass
 
     # Load pipeline for progressive ticket creation
     pipeline_phases = []
-    config_path = project_config.project_base_path / ".conductor" / "config.yaml"
-    if config_path.exists():
-        try:
-            import yaml
-            cfg = yaml.safe_load(config_path.read_text())
-            pipeline_file = cfg.get("pipeline", "")
-            if pipeline_file:
-                pipeline_path = project_config.project_base_path / pipeline_file
-                if pipeline_path.exists():
-                    from conductor.pipeline.loader import load_pipeline_yaml
-                    pipeline_phases = load_pipeline_yaml(pipeline_path)
-                    click.echo(f"📄 Watcher loaded pipeline from {pipeline_file}")
-                else:
-                    click.echo(f"⚠ Pipeline file not found: {pipeline_file}")
-        except Exception as e:
-            click.echo(f"⚠ Could not load pipeline: {e}")
+    pipeline_file = cfg.get("pipeline", "")
+    if pipeline_file:
+        pipeline_path = project_config.project_base_path / pipeline_file
+        if pipeline_path.exists():
+            try:
+                from conductor.pipeline.loader import load_pipeline_yaml
+                pipeline_phases = load_pipeline_yaml(pipeline_path)
+                click.echo(f"📄 Watcher loaded pipeline from {pipeline_file}")
+            except Exception as e:
+                click.echo(f"⚠ Could not load pipeline: {e}")
+        else:
+            click.echo(f"⚠ Pipeline file not found: {pipeline_file}")
 
     if not pipeline_phases:
         from conductor.pipeline.builder import build_pipeline
-        pipeline_phases = build_pipeline("full")
-        click.echo("⚠ Using built-in 'full' pipeline (no pipeline.yaml loaded)")
+        pipeline_phases = build_pipeline("minimal")
+        click.echo("⚠ No pipeline.yaml loaded — using built-in minimal pipeline")
 
-    # Create LLM provider from config
     llm_provider = _load_provider_from_config(project_config)
+
+    click.echo(
+        f"⚙ Settings: poll={watcher_config.poll_interval_seconds}s, "
+        f"concurrent={watcher_config.max_concurrent_agents}, "
+        f"hitl={watcher_config.hitl_default}"
+    )
 
     watcher = AsyncEventWatcher(
         tracker=trk,

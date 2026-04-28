@@ -2,9 +2,7 @@
 
 import asyncio
 import time
-from unittest.mock import patch
 
-from conductor.board_initializer import initialize_board
 from conductor.models.enums import TicketStatus
 from conductor.watcher.async_watcher import AsyncEventWatcher
 
@@ -13,15 +11,34 @@ def test_async_watcher_dispatches_concurrently(
     tracker, git_manager, registry, project_config, watcher_config, tmp_dir
 ):
     """Multiple READY tickets are dispatched concurrently."""
-    # Init with minimal pipeline (2 tickets, both READY)
+    from conductor.models.ticket import Ticket, TicketMetadata
+    from conductor.models.enums import TicketType
+
     watcher_config.hitl_default = False
     watcher_config.max_concurrent_agents = 2
 
-    ids = initialize_board(
-        tracker=tracker, git=git_manager, pipeline_mode="minimal",
-        working_directory=tmp_dir,
-    )
-    assert len(ids) == 2
+    # Create 2 READY tickets: one auto-approve, one HITL
+    t1_id = tracker.create_ticket(Ticket(
+        title="Task A",
+        status=TicketStatus.READY,
+        ticket_type=TicketType.TASK,
+        metadata=TicketMetadata(
+            phase="test", step="step_a", agent_name="noop",
+            hitl_required=False,
+            deliverable_paths=[f"output/task_a.md"],
+        ),
+    ))
+    t2_id = tracker.create_ticket(Ticket(
+        title="Task B",
+        status=TicketStatus.READY,
+        ticket_type=TicketType.TASK,
+        metadata=TicketMetadata(
+            phase="test", step="step_b", agent_name="noop",
+            hitl_required=True,
+            deliverable_paths=[f"output/task_b.md"],
+        ),
+    ))
+    ids = [t1_id, t2_id]
 
     watcher = AsyncEventWatcher(
         tracker=tracker,
@@ -35,8 +52,8 @@ def test_async_watcher_dispatches_concurrently(
     # Run one poll cycle
     asyncio.run(watcher._poll_and_react())
 
-    # COND-001 has hitl_after=False → DONE
-    # COND-002 has hitl_after=True → AWAITING_REVIEW (ticket-level overrides config)
+    # Task A: hitl_required=False → DONE
+    # Task B: hitl_required=True → AWAITING_REVIEW
     t1 = tracker.get_ticket(ids[0])
     t2 = tracker.get_ticket(ids[1])
     assert t1.status == TicketStatus.DONE, f"{ids[0]} is {t1.status.value}"

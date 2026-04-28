@@ -17,10 +17,24 @@ providers:
   region: "us-east-1"
 
 settings:
-  poll_interval_seconds: 30
+  poll_interval_seconds: 10
+  max_concurrent_agents: 3
   hitl_default: true
   stale_ticket_threshold_seconds: 1800
 ```
+
+Settings from `config.yaml` are used as defaults by the CLI. Explicit CLI flags
+override config.yaml values:
+
+```bash
+# Uses config.yaml poll_interval_seconds (e.g., 10)
+conductor watch-async
+
+# Overrides config.yaml — uses 5 seconds
+conductor watch-async --poll-interval 5
+```
+
+Priority: **CLI flag** > **config.yaml** > **built-in default**
 
 ## LLM Providers
 
@@ -151,15 +165,32 @@ on the dashboard, regardless of configuration.
 ## Agent Module Loading
 
 The `agents_module` field specifies a Python module path that conductor imports
-at startup. The module must expose:
+at startup. The module must expose a `register()` function:
 
 ```python
 def register(registry: AgentRegistry) -> None:
+    # Register agents
     registry.register(MyAgent())
+
+    # Register scope discovery (for per-workpackage/pod phases)
+    registry.set_scope_discovery(MyScopeDiscovery())
+
+    # Register custom validators (for project-specific checks)
+    registry.register_validator("my_check", my_validator_fn)
 ```
 
+The registry is the single integration point between conductor and your project.
+Through it you provide:
+
+| What | Method | Purpose |
+|------|--------|---------|
+| Agents | `registry.register(executor)` | Map agent names to executor instances |
+| Scope discovery | `registry.set_scope_discovery(impl)` | How to discover workpackages, pods, domains |
+| Custom validators | `registry.register_validator(name, fn)` | Project-specific deliverable checks |
+
 If `agents_module` is not set or the module can't be imported, conductor falls
-back to built-in generic executors (NoOp, Echo, Shell).
+back to built-in generic executors (NoOp, Echo, Shell) and `DefaultScopeDiscovery`
+(returns empty lists for all scopes).
 
 ## Git Configuration
 

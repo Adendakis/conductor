@@ -58,9 +58,7 @@ class ToolSandbox:
         ]
     )
     write_allowed_exceptions: list[str] = field(
-        default_factory=lambda: [
-            "*/Pod_Assignment.json",
-        ]
+        default_factory=list
     )
 
     def can_read(self, path: str) -> bool:

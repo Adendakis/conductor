@@ -23,6 +23,8 @@
 │         AGENT REGISTRY                       │
 │  Resolves agent_name → Executor instance     │
 │  User agents loaded via agents_module        │
+│  ScopeDiscovery for per-WP/pod phases        │
+│  Custom validators for deliverable checks    │
 │  Fallback: NoOpExecutor for unregistered     │
 └──────────────────┬──────────────────────────┘
                    │
@@ -75,9 +77,13 @@ The `AsyncEventWatcher` uses `asyncio` for concurrent agent dispatch:
 ## Progressive Ticket Creation
 
 Phases define `creates_next_phases`. When all tickets in a phase reach DONE,
-the watcher reads the phase's deliverables (e.g., `Workpackage_Planning.json`)
-and creates tickets for the next phases. Per-workpackage phases create one set
-of tickets per workpackage discovered.
+the watcher creates tickets for the next phases. For scoped phases
+(`per_workpackage`, `per_pod`, `per_domain`), the watcher calls the project's
+`ScopeDiscovery` implementation to discover scope units.
+
+Conductor is generic — it doesn't know what your workpackage IDs look like or
+what file format they're stored in. Your project's `ScopeDiscovery` bridges
+your data formats to conductor's interface. See [Writing Agents — Scope Discovery](writing-agents.md#scope-discovery).
 
 ## Pod Worktrees
 
@@ -114,18 +120,45 @@ relevant ticket FAILED. In both cases the merge is aborted and the repo stays cl
 
 ## Plugin Architecture
 
-Conductor is a framework — agents live in the user's project:
+Conductor is a generic framework — it knows about tickets, phases, steps, scopes,
+and execution, but nothing about your project's domain. All project-specific
+knowledge lives in your project, not in conductor.
 
 ```
-conductor (pip install)     ← framework
-my-project/                 ← user's project
-├── agents/__init__.py      ← def register(registry): ...
+conductor (pip install)     ← generic framework
+my-project/                 ← your project
+├── agents/
+│   ├── __init__.py         ← register(registry) — agents, scope, validators
+│   ├── scope_discovery.py  ← how to discover workpackages/pods (your data format)
+│   ├── validators.py       ← project-specific deliverable checks
+│   └── my_agent/           ← agent code + prompts
 ├── pipeline.yaml           ← workflow definition
-└── prompts/                ← prompt templates
+└── .conductor/config.yaml  ← project settings
 ```
 
-The `agents_module` config tells conductor which Python module to import.
-The module's `register()` function adds agents to the registry.
+The `register()` function in `agents/__init__.py` is the single integration point.
+It receives an `AgentRegistry` and registers:
+
+- **Agents** — executor instances that do the work
+- **ScopeDiscovery** — how to discover workpackages, pods, domains from your data
+- **Custom validators** — project-specific deliverable checks
+
+```python
+def register(registry: AgentRegistry):
+    # Agents
+    registry.register(MyAnalyzer())
+    registry.register(MyProcessor())
+
+    # Scope discovery (if using per-workpackage/pod phases)
+    registry.set_scope_discovery(MyScopeDiscovery())
+
+    # Custom validators (if deliverables need domain-specific checks)
+    registry.register_validator("check_schema", my_schema_validator)
+```
+
+This keeps conductor generic. Different projects can use completely different
+data formats, file structures, and domain concepts — conductor doesn't need
+to understand any of them.
 
 ## LLM Agent Loop
 
@@ -170,12 +203,12 @@ See the [LLM Usage Guide](llm-usage.md) for configuration details.
 conductor/
 ├── models/          ← Pydantic data models (Ticket, Config, Phase, Metrics)
 ├── tracker/         ← TrackerBackend ABC + SQLite implementation + web dashboard
-├── watcher/         ← EventWatcher (sync) + AsyncEventWatcher + dependency resolver
+├── watcher/         ← EventWatcher (sync) + AsyncEventWatcher + dependency resolver + scope discovery
 ├── executor/        ← AgentExecutor ABC + Tool/Hybrid/LLM/Reviewer executors + registry
 ├── context/         ← ContextAssembler + PromptContext
 ├── providers/       ← LLMProvider ABC + BedrockProvider + sliding window history
 ├── tools/           ← AgentTool ABC + file ops (read/write/list/search/batch) + shell
-├── validation/      ← DeliverableValidator + custom validators
+├── validation/      ← DeliverableValidator + pluggable custom validator registry
 ├── git/             ← GitManager + WorktreeManager
 ├── pipeline/        ← Pipeline builder + YAML loader + validator
 ├── observability/   ← StructuredLogger + MetricsStore

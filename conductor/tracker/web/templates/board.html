@@ -126,7 +126,7 @@
     }
 
     // Auto-reload board every 5 seconds (preserves filters)
-    let autoReloadInterval = setInterval(refreshBoard, 10000);
+    let autoReloadInterval = setInterval(refreshBoard, 5000);
 
     // --- Compact mode ---
     function isCompact() {
@@ -166,7 +166,7 @@
     function closeModal() {
       document.getElementById('ticket-modal').innerHTML = '';
       refreshBoard();
-      autoReloadInterval = setInterval(refreshBoard, 10000);  // ← restarts it
+      autoReloadInterval = setInterval(refreshBoard, 5000);  // ← restarts it
     }
 
     // Close modal on escape
