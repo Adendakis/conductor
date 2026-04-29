@@ -1,16 +1,56 @@
 # Code Migration Demo Pipeline
 # Demonstrates: progressive ticket creation, parallel WPs, HITL gates,
-# reviewer pattern, rejection + rework, auto-approve
+# reviewer pattern, rejection + rework, auto-approve, HITL editable fields
 #
 # Run: conductor init --reset && conductor serve --port 8080 && conductor watch-async
 
 pipeline:
   name: "Code Migration Demo"
   phases:
+    # Phase 0: Project Configuration (global — created at init, HITL fields)
+    - id: "phase_0"
+      name: "Project Configuration"
+      scope: "global"
+      steps:
+        - id: "project_setup"
+          name: "Project Configuration"
+          agent: "__noop__"
+          hitl_after: true
+          description: "Review the migration settings below. Edit values as needed, then approve to begin analysis."
+          hitl_fields:
+            - name: "calibration_run"
+              label: "Run calibration pass before full analysis"
+              type: "boolean"
+              default: false
+            - name: "source_code_path"
+              label: "Path to legacy source code"
+              type: "text"
+              default: "input/legacy/legacy_code"
+            - name: "database_source_path"
+              label: "Path to database source (leave empty to skip)"
+              type: "text"
+              default: ""
+            - name: "target_language"
+              label: "Target language for code generation"
+              type: "select"
+              options: ["Java", "C#", "Python"]
+              default: "Java"
+            - name: "target_framework"
+              label: "Target framework"
+              type: "select"
+              options: ["Spring Boot", "Quarkus", "Micronaut"]
+              default: "Spring Boot"
+            - name: "max_pod_concurrency"
+              label: "Max parallel pods"
+              type: "number"
+              default: 3
+          deliverables: []
+
     # Phase 1: Analysis (global — created at init)
     - id: "phase_1"
       name: "Legacy Analysis"
       scope: "global"
+      depends_on: ["phase_0"]
       creates_next_phases: ["phase_2"]
       steps:
         - id: "analyze_db"

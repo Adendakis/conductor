@@ -425,3 +425,53 @@ textarea:focus { outline: none; border-color: var(--accent); }
   cursor: pointer;
 }
 .column-overflow:hover { color: var(--accent); }
+
+/* HITL editable fields */
+.hitl-fields h3 { display: flex; align-items: center; gap: 6px; }
+
+.hitl-field-row label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.hitl-input {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.hitl-input:focus { outline: none; border-color: var(--accent); }
+.hitl-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hitl-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.hitl-checkbox:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hitl-select {
+  width: 100%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.hitl-select:focus { outline: none; border-color: var(--accent); }
+.hitl-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

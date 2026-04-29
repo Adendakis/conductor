@@ -75,3 +75,14 @@ class TrackerBackend(ABC):
     def delete_ticket(self, ticket_id: str) -> None:
         """Delete a ticket and all its associated data (comments, links, history)."""
         ...
+
+    def update_description(self, ticket_id: str, description: str) -> None:
+        """Update the ticket description text.
+
+        Default implementation re-reads the ticket, patches the description,
+        and writes it back.  Backends that support direct description updates
+        should override this.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement update_description"
+        )

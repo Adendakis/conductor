@@ -34,6 +34,59 @@
     <div style="margin-top:16px; padding:12px; background:var(--bg-tertiary); border:1px solid var(--border); border-radius:var(--radius); font-size:13px; white-space:pre-wrap; line-height:1.6;">{{ ticket.description }}</div>
     {% endif %}
 
+    {# ── HITL Editable Fields ── #}
+    {% if has_hitl and hitl_values %}
+    <div class="hitl-fields" style="margin-top:16px;">
+      <h3 style="font-size:14px; margin-bottom:10px; color:var(--text-secondary);">
+        ⚙ Editable Fields
+      </h3>
+      <div id="hitl-form" style="background:var(--bg-tertiary); border:1px solid var(--border); border-radius:var(--radius); padding:14px;">
+        {% for name, value in hitl_values.items() %}
+        {% set meta = hitl_meta.get(name, {}) %}
+        {% set field_label = meta.get('label', '') or name %}
+        {% set field_type = meta.get('type', 'text') %}
+        {% set field_options = meta.get('options', []) %}
+        <div class="hitl-field-row" style="margin-bottom:12px;">
+          <label for="hitl_{{ name }}" style="display:block; font-size:12px; color:var(--text-secondary); margin-bottom:4px;">
+            {{ field_label }}
+          </label>
+
+          {% if field_type == 'boolean' or value is sameas true or value is sameas false %}
+          {# Boolean → checkbox #}
+          <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:13px;">
+            <input type="checkbox" name="hitl_{{ name }}" value="true"
+                   {{ 'checked' if value }} class="hitl-checkbox"
+                   {% if ticket.status.value != 'awaiting_review' %}disabled{% endif %}>
+            {{ name }}
+          </label>
+
+          {% elif field_type == 'select' and field_options %}
+          {# Select → dropdown #}
+          <select name="hitl_{{ name }}" class="hitl-select"
+                  {% if ticket.status.value != 'awaiting_review' %}disabled{% endif %}>
+            {% for opt in field_options %}
+            <option value="{{ opt }}" {{ 'selected' if opt == value|string }}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+
+          {% elif field_type == 'number' or value is number %}
+          {# Number → number input #}
+          <input type="number" name="hitl_{{ name }}" value="{{ value }}"
+                 class="hitl-input"
+                 {% if ticket.status.value != 'awaiting_review' %}disabled{% endif %}>
+
+          {% else %}
+          {# Text → text input #}
+          <input type="text" name="hitl_{{ name }}" value="{{ value }}"
+                 class="hitl-input"
+                 {% if ticket.status.value != 'awaiting_review' %}disabled{% endif %}>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Comments (shown BEFORE actions so they're always visible) -->
     {% if ticket.comments %}
     <div class="comments" style="margin-top:16px;">
@@ -84,7 +137,6 @@
       <button class="btn" onclick="refreshBoard()">↻ Refresh Board</button>
     </div>
 
-    <!-- Reject form (hidden by default) -->
     <script>
       function doApprove(ticketId) {
         var textarea = document.querySelector('textarea[name="comment"]');
@@ -96,7 +148,23 @@
           chain = fetch('/partials/ticket/' + ticketId + '/comment', {method: 'POST', body: formData});
         }
         chain.then(function() {
-          return fetch('/partials/ticket/' + ticketId + '/approve', {method: 'POST'});
+          // Collect HITL field values and send with approve
+          var formData = new FormData();
+          var hitlForm = document.getElementById('hitl-form');
+          if (hitlForm) {
+            // Gather all hitl_ inputs
+            hitlForm.querySelectorAll('input[name^="hitl_"]').forEach(function(input) {
+              if (input.type === 'checkbox') {
+                formData.append(input.name, input.checked ? 'true' : 'false');
+              } else {
+                formData.append(input.name, input.value);
+              }
+            });
+            hitlForm.querySelectorAll('select[name^="hitl_"]').forEach(function(sel) {
+              formData.append(sel.name, sel.value);
+            });
+          }
+          return fetch('/partials/ticket/' + ticketId + '/approve', {method: 'POST', body: formData});
         }).then(function() {
           closeModal();
           refreshBoard();

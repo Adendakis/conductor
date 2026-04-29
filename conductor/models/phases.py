@@ -1,8 +1,22 @@
 """Pipeline phase and step definition models."""
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
+
+
+class HitlFieldDefinition(BaseModel):
+    """Definition of a single HITL-editable field.
+
+    Field schema and values are embedded in the ticket description as a
+    parseable YAML block so the feature works with any tracker backend.
+    """
+
+    name: str
+    label: str = ""
+    type: str = "text"  # boolean, text, number, select
+    default: Any = ""
+    options: list[str] = Field(default_factory=list)  # for select type
 
 
 class DeliverableSpec(BaseModel):
@@ -49,6 +63,7 @@ class StepDefinition(BaseModel):
     # HITL configuration
     hitl_after: bool = True
     auto_approve_on_validation: bool = False
+    hitl_fields: list[HitlFieldDefinition] = Field(default_factory=list)
 
 
 class PhaseDefinition(BaseModel):

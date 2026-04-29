@@ -5,6 +5,7 @@ from typing import Any
 
 from conductor.models.phases import (
     DeliverableSpec,
+    HitlFieldDefinition,
     PhaseDefinition,
     QualityGateDefinition,
     StepDefinition,
@@ -77,6 +78,18 @@ def _parse_step(data: dict[str, Any]) -> StepDefinition:
                 per_workpackage=d.get("per_workpackage", False),
             ))
 
+    # Parse HITL field definitions
+    hitl_fields: list[HitlFieldDefinition] = []
+    for f in data.get("hitl_fields", []):
+        if isinstance(f, dict):
+            hitl_fields.append(HitlFieldDefinition(
+                name=f.get("name", ""),
+                label=f.get("label", ""),
+                type=f.get("type", "text"),
+                default=f.get("default", ""),
+                options=f.get("options", []),
+            ))
+
     return StepDefinition(
         step_id=data.get("id", ""),
         display_name=data.get("name", ""),
@@ -94,4 +107,5 @@ def _parse_step(data: dict[str, Any]) -> StepDefinition:
         workpackage_type=data.get("workpackage_type"),
         hitl_after=data.get("hitl_after", True),
         auto_approve_on_validation=data.get("auto_approve_on_validation", False),
+        hitl_fields=hitl_fields,
     )

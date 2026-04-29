@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from conductor.context.hitl_fields import build_hitl_fields_block
 from conductor.models.enums import TicketStatus, TicketType
 from conductor.models.phases import PhaseDefinition, StepDefinition
 from conductor.models.ticket import Ticket, TicketMetadata
@@ -316,7 +317,13 @@ class DynamicTicketCreator:
             f"- Max iterations: {step.max_review_iterations}",
         ])
 
-        return "\n".join(parts)
+        description = "\n".join(parts)
+
+        # Embed HITL editable fields block
+        if step.hitl_fields:
+            description += build_hitl_fields_block(step.hitl_fields)
+
+        return description
 
     def _resolve_path_template(
         self, path: str, scope_id: Optional[str]

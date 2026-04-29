@@ -375,6 +375,21 @@ class SqliteTracker(TrackerBackend):
         )
         self._conn.commit()
 
+    def update_description(self, ticket_id: str, description: str) -> None:
+        """Update the ticket description text."""
+        row = self._conn.execute(
+            "SELECT id FROM tickets WHERE id = ?", (ticket_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"Ticket {ticket_id} not found")
+
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "UPDATE tickets SET description = ?, updated_at = ? WHERE id = ?",
+            (description, now, ticket_id),
+        )
+        self._conn.commit()
+
     # --- Internal helpers ---
 
     def _row_to_ticket(self, row: sqlite3.Row) -> Ticket:

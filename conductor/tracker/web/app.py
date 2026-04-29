@@ -8,11 +8,34 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from conductor.context.hitl_fields import (
+    has_hitl_fields,
+    parse_hitl_field_meta,
+    parse_hitl_fields,
+    update_hitl_fields,
+)
 from conductor.models.enums import TicketStatus
 from conductor.tracker.sqlite_backend import SqliteTracker
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _coerce_form_value(raw: str, original: object) -> object:
+    """Coerce a form string value to match the type of *original*."""
+    if isinstance(original, bool):
+        return raw.lower() in ("true", "on", "1", "yes")
+    if isinstance(original, int):
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return original
+    if isinstance(original, float):
+        try:
+            return float(raw)
+        except (ValueError, TypeError):
+            return original
+    return str(raw)
 
 
 def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
@@ -200,9 +223,25 @@ def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
             ticket = tracker.get_ticket(ticket_id)
         except KeyError:
             raise HTTPException(status_code=404, detail="Ticket not found")
+
+        # Parse HITL fields for the template
+        hitl_values = {}
+        hitl_meta = {}
+        has_hitl = False
+        if ticket.description and has_hitl_fields(ticket.description):
+            hitl_values = parse_hitl_fields(ticket.description)
+            hitl_meta = parse_hitl_field_meta(ticket.description)
+            has_hitl = True
+
         return templates.TemplateResponse(
             "partials/ticket_panel.html",
-            {"request": request, "ticket": ticket},
+            {
+                "request": request,
+                "ticket": ticket,
+                "has_hitl": has_hitl,
+                "hitl_values": hitl_values,
+                "hitl_meta": hitl_meta,
+            },
         )
 
     @app.get("/partials/table", response_class=HTMLResponse)
@@ -238,7 +277,32 @@ def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
 
     @app.post("/partials/ticket/{ticket_id}/approve", response_class=HTMLResponse)
     async def partial_approve(request: Request, ticket_id: str):
-        """HTMX: approve ticket."""
+        """HTMX: approve ticket.
+
+        If the ticket description contains HITL fields and the request
+        includes form data with ``hitl_fields`` values, the description
+        is updated before transitioning.
+        """
+        ticket = tracker.get_ticket(ticket_id)
+
+        # Check for HITL field updates submitted via form
+        if has_hitl_fields(ticket.description):
+            form = await request.form()
+            if form:
+                current_values = parse_hitl_fields(ticket.description)
+                updated = dict(current_values)
+                for key in current_values:
+                    form_key = f"hitl_{key}"
+                    if form_key in form:
+                        raw = form[form_key]
+                        updated[key] = _coerce_form_value(raw, current_values.get(key))
+                    # Checkboxes: absent means false
+                    elif isinstance(current_values.get(key), bool):
+                        updated[key] = False
+
+                new_desc = update_hitl_fields(ticket.description, updated)
+                tracker.update_description(ticket_id, new_desc)
+
         tracker.update_status(ticket_id, TicketStatus.APPROVED, changed_by="human")
         ticket = tracker.get_ticket(ticket_id)
         return templates.TemplateResponse(

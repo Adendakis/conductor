@@ -8,6 +8,7 @@ from conductor.git.manager import GitManager
 from conductor.models.enums import TicketStatus, TicketType
 from conductor.models.phases import PhaseDefinition
 from conductor.models.ticket import Ticket, TicketMetadata
+from conductor.context.hitl_fields import build_hitl_fields_block
 from conductor.pipeline.builder import build_pipeline
 from conductor.tracker.backend import TrackerBackend
 from conductor.watcher.ticket_creator import DynamicTicketCreator
@@ -209,6 +210,10 @@ def _create_phase_tickets(
             else _build_description(step, phase)
         )
 
+        # Append HITL fields block even for custom descriptions
+        if step.hitl_fields and step.description:
+            description += build_hitl_fields_block(step.hitl_fields)
+
         metadata = TicketMetadata(
             phase=phase.phase_id,
             step=step.step_id,
@@ -276,4 +281,10 @@ def _build_description(step, phase) -> str:
         f"- Max iterations: {step.max_review_iterations}",
     ])
 
-    return "\n".join(parts)
+    description = "\n".join(parts)
+
+    # Embed HITL editable fields block
+    if step.hitl_fields:
+        description += build_hitl_fields_block(step.hitl_fields)
+
+    return description
