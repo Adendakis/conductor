@@ -68,6 +68,13 @@ class WorktreeManager:
         result: dict[str, Path] = {}
 
         for pod_id, pod_data in pods.items():
+            # Skip if worktree already exists (idempotent)
+            existing = self._active_worktrees.get(pod_id)
+            if existing and existing.exists():
+                result[pod_id] = existing
+                logger.info(f"Worktree for pod {pod_id} already exists, reusing")
+                continue
+
             worktree_path = self.get_or_create_worktree(pod_id)
             if not worktree_path:
                 logger.error(f"Failed to create worktree for pod {pod_id}")
@@ -307,3 +314,72 @@ class WorktreeManager:
             if path.exists():
                 self.git.remove_worktree(str(path))
             self._active_worktrees.pop(pod_id, None)
+
+    # ------------------------------------------------------------------
+    # State recovery after restart
+    # ------------------------------------------------------------------
+
+    def restore_from_disk(self, pod_assignment_path: Path) -> bool:
+        """Reconstruct worktree manager state from existing worktrees on disk.
+
+        Called on watcher startup to recover state after a crash or restart.
+        Scans the worktrees_base directory for existing pod worktrees and
+        rebuilds _active_worktrees and _pod_assignment from disk + JSON.
+
+        Returns True if state was restored, False if nothing to restore.
+        """
+        if not self.worktrees_base.exists():
+            return False
+
+        # Check for existing pod worktree directories
+        existing_dirs = [
+            d for d in self.worktrees_base.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        ]
+        if not existing_dirs:
+            return False
+
+        # Read pod assignment to get the full mapping
+        if not pod_assignment_path.exists():
+            logger.warning(
+                f"Worktree directories exist at {self.worktrees_base} but "
+                f"pod assignment not found at {pod_assignment_path}"
+            )
+            # Still register the directories we found
+            for d in existing_dirs:
+                self._active_worktrees[d.name] = d
+            return True
+
+        try:
+            data = json.loads(pod_assignment_path.read_text(encoding="utf-8"))
+            pods = data.get("pods", {})
+            self._pod_assignment = pods
+            self._merge_order = data.get("merge_order", [])
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to read pod assignment: {e}")
+            # Still register directories
+            for d in existing_dirs:
+                self._active_worktrees[d.name] = d
+            return True
+
+        # Match existing directories to pod IDs
+        restored_count = 0
+        for d in existing_dirs:
+            pod_id = d.name
+            if pod_id in pods or pod_id in self._active_worktrees:
+                self._active_worktrees[pod_id] = d
+                restored_count += 1
+                logger.info(f"Restored worktree for pod {pod_id}: {d}")
+
+        if restored_count > 0:
+            logger.info(
+                f"WorktreeManager restored: {restored_count} pod worktrees, "
+                f"{len(self._pod_assignment)} pods in assignment"
+            )
+            return True
+
+        return False
+
+    def is_setup_complete(self) -> bool:
+        """Check if pod worktrees are already set up (from this run or a previous one)."""
+        return bool(self._active_worktrees) and bool(self._pod_assignment)

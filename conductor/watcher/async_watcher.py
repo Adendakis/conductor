@@ -66,6 +66,9 @@ class AsyncEventWatcher:
         """Main async loop."""
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent_agents)
 
+        # Restore worktree manager state from disk (after crash/restart)
+        self._try_restore_worktree_state()
+
         while True:
             try:
                 await self._poll_and_react()
@@ -501,6 +504,49 @@ class AsyncEventWatcher:
                 f"tickets for {[p.phase_id for p in next_phases]}"
             )
 
+    def _try_restore_worktree_state(self) -> None:
+        """Restore WorktreeManager state from disk after a restart.
+
+        Checks if worktree directories exist from a previous run.
+        If so, reconstructs the manager state so the watcher can
+        continue processing pod-scoped tickets without re-running
+        the pod setup hook.
+        """
+        worktrees_base = (
+            self.project_config.project_base_path
+            / self.config.worktrees_directory
+        )
+
+        if not worktrees_base.exists():
+            return
+
+        # Check if there are any pod directories
+        pod_dirs = [
+            d for d in worktrees_base.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        ]
+        if not pod_dirs:
+            return
+
+        # Find pod assignment file
+        pod_path = (
+            self.project_config.project_base_path
+            / self.config.pod_assignment_path
+        )
+
+        if not self._worktree_manager:
+            self._worktree_manager = WorktreeManager(
+                git=self.git, worktrees_base=worktrees_base
+            )
+
+        if self._worktree_manager.restore_from_disk(pod_path):
+            log.info(
+                f"Restored worktree state: "
+                f"{len(self._worktree_manager.get_all_pod_ids())} pods"
+            )
+        else:
+            log.debug("No worktree state to restore")
+
     def _execute_pod_setup_hook(self, phase_def) -> None:
         """Execute the setup_and_execute_pods post-phase hook.
 
@@ -534,8 +580,13 @@ class AsyncEventWatcher:
                 git=self.git, worktrees_base=worktrees_base
             )
 
-        # Setup worktrees
+        # Skip if already set up (idempotent — safe after restart)
+        if self._worktree_manager.is_setup_complete():
+            log.info("Pod worktrees already set up, reusing")
+            return
+
+        # Setup worktrees (idempotent — skips existing pods)
         pod_worktrees = self._worktree_manager.setup_pod_worktrees(pod_path)
         log.info(
-            f"Pod setup complete: {len(pod_worktrees)} worktrees created"
+            f"Pod setup complete: {len(pod_worktrees)} worktrees"
         )
