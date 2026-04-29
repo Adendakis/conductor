@@ -118,6 +118,12 @@ pods merge in any order.
 conflicted file list. Pod→main conflict stops further merges and marks the
 relevant ticket FAILED. In both cases the merge is aborted and the repo stays clean.
 
+**Crash recovery**: if the watcher restarts after worktrees are created, the
+`WorktreeManager` restores its state from disk on startup. It scans the
+`worktrees/` directory for existing pod directories and reads `Pod_Assignment.json`
+to rebuild the pod→workpackage mapping. The pod setup hook is idempotent — it
+skips pods that already have worktrees. No manual intervention needed after a restart.
+
 ## Plugin Architecture
 
 Conductor is a generic framework — it knows about tickets, phases, steps, scopes,

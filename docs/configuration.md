@@ -199,6 +199,15 @@ is not a git repo, conductor logs a warning and continues without git.
 
 Tags follow the convention: `conductor/{ticket_id}/started`, `conductor/{ticket_id}/completed`, `conductor/{ticket_id}/approved`.
 
+### Pod Worktrees
+
+For pod-scoped phases, conductor creates git worktrees in `worktrees_directory`.
+On watcher restart, the `WorktreeManager` automatically restores its state from
+existing worktree directories on disk — no manual recovery needed.
+
+The pod setup hook (`post_phase_hook: "setup_and_execute_pods"`) is idempotent:
+calling it twice skips pods that already have worktrees.
+
 ## Dashboard
 
 ```bash
