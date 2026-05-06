@@ -194,6 +194,41 @@ class LLMExecutor(AgentExecutor):
         tools = self.get_tools()
         model_config = self.get_model_config()
 
+        # --- Inject human clarifications (HITL field values) ---
+        from conductor.context.hitl_fields import has_hitl_fields, parse_hitl_fields
+
+        if ticket.description and has_hitl_fields(ticket.description):
+            hitl_values = parse_hitl_fields(ticket.description)
+            if hitl_values:
+                clarification_block = (
+                    "============================================================\n"
+                    "## Human Clarifications\n"
+                    "============================================================\n\n"
+                    "The following values were provided by the human reviewer. "
+                    "Use them to guide your work:\n\n"
+                )
+                for key, val in hitl_values.items():
+                    clarification_block += f"- **{key}**: {val}\n"
+                clarification_block += "\n============================================================\n\n"
+                user_prompt = clarification_block + user_prompt
+
+        # --- Inject rework feedback from previous iterations ---
+        if ticket.metadata.iteration > 1 and ticket.comments:
+            rework_comments = [
+                c for c in ticket.comments
+                if "Rework Required" in c or "REJECTED" in c.upper()
+            ]
+            feedback_text = rework_comments[-1] if rework_comments else ticket.comments[-1]
+            if feedback_text and feedback_text.strip():
+                user_prompt = (
+                    f"============================================================\n"
+                    f"⚠️ REWORK ITERATION {ticket.metadata.iteration}\n"
+                    f"============================================================\n\n"
+                    f"This task was returned for rework. Address ALL points below:\n\n"
+                    f"{feedback_text}\n\n"
+                    f"============================================================\n\n"
+                ) + user_prompt
+
         # --- Pre-load referenced files from prompt text ---
         user_prompt = self._resolve_prompt_references(
             user_prompt, context.working_directory
