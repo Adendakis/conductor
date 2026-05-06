@@ -9,6 +9,7 @@ from conductor.models.metrics import StepMetrics
 
 if TYPE_CHECKING:
     from conductor.models.config import ProjectConfig
+    from conductor.models.phases import HitlFieldDefinition
     from conductor.models.ticket import Ticket
     from conductor.providers.base import LLMProvider
     from conductor.tracker.backend import TrackerBackend
@@ -17,13 +18,19 @@ if TYPE_CHECKING:
 
 @dataclass
 class ExecutionResult:
-    """Result returned by any agent executor."""
+    """Result returned by any agent executor.
+
+    When ``clarifications`` is non-empty the executor treats the result as
+    "needs human input" — the watcher embeds the fields in the ticket
+    description and transitions to AWAITING_REVIEW regardless of ``success``.
+    """
 
     success: bool
     summary: str
     error: Optional[str] = None
     deliverables_produced: list[str] = field(default_factory=list)
     metrics: Optional[StepMetrics] = None
+    clarifications: list["HitlFieldDefinition"] = field(default_factory=list)
 
 
 @dataclass

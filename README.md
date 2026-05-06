@@ -64,6 +64,7 @@ tmux session, or a remote HTTP worker.
 - **Progressive ticket creation** — later phases are created as earlier ones complete
 - **Parallel execution** — async watcher with semaphore-limited concurrency
 - **Human-in-the-loop** — approve/reject on a dark-themed Kanban dashboard
+- **HITL editable fields** — steps declare structured fields (boolean, text, number, select) that reviewers edit before approving; agents can also request clarifications at runtime
 - **Rework loops** — reviewer rejects → specialist re-runs with feedback
 - **Stale detection** — stuck tickets are automatically reset
 - **Git checkpointing** — tags and commits at every transition

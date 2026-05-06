@@ -65,6 +65,20 @@ class ContextAssembler:
                     f"Do NOT regenerate from scratch.\n\n{feedback}"
                 )
 
+        # 8. HITL field values injection (human-provided clarifications)
+        from conductor.context.hitl_fields import has_hitl_fields, parse_hitl_fields
+
+        if ticket.description and has_hitl_fields(ticket.description):
+            hitl_values = parse_hitl_fields(ticket.description)
+            if hitl_values:
+                user_prompt += "\n\n## Human Clarifications\n\n"
+                user_prompt += (
+                    "The following values were provided by the human reviewer. "
+                    "Use them to guide your work:\n\n"
+                )
+                for key, val in hitl_values.items():
+                    user_prompt += f"- **{key}**: {val}\n"
+
         source_files = [name for name, _ in input_sections]
 
         result = PromptContext(

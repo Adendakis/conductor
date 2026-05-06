@@ -158,6 +158,68 @@ class MyAgent(AgentExecutor):
         )
 ```
 
+## Requesting Clarification from Humans
+
+When an agent encounters ambiguity or needs human input to proceed, it can
+return `clarifications` in the `ExecutionResult`. The watcher embeds these as
+HITL editable fields in the ticket description and transitions the ticket to
+`AWAITING_REVIEW`.
+
+```python
+from conductor.executor.base import AgentExecutor, ExecutionContext, ExecutionResult
+from conductor.models.phases import HitlFieldDefinition
+
+class MyAgent(AgentExecutor):
+    @property
+    def agent_name(self) -> str:
+        return "my_agent"
+
+    def execute(self, ticket, context):
+        # Agent discovers it needs human input
+        return ExecutionResult(
+            success=False,
+            summary="Need clarification on database migration scope",
+            clarifications=[
+                HitlFieldDefinition(
+                    name="include_audit_tables",
+                    label="Should we migrate audit tables?",
+                    type="boolean",
+                    default=False,
+                ),
+                HitlFieldDefinition(
+                    name="auth_mechanism",
+                    label="Authentication mechanism in use",
+                    type="select",
+                    options=["LDAP", "SAML", "OAuth2"],
+                    default="LDAP",
+                ),
+                HitlFieldDefinition(
+                    name="db_password_location",
+                    label="Where is the DB password stored?",
+                    type="text",
+                    default="",
+                ),
+            ],
+        )
+```
+
+**What happens next:**
+
+1. The watcher embeds the fields in the ticket description as a YAML block
+2. The ticket transitions to `AWAITING_REVIEW`
+3. In the dashboard, the human sees a form with checkbox, dropdown, and text input
+4. The human fills in the answers and clicks Approve
+5. The ticket goes back to `READY` and the agent re-runs
+6. The context assembler injects the human's answers into the prompt under
+   a "Human Clarifications" section — the agent doesn't need to manually
+   parse the ticket description
+
+This is preferred over the reject-with-comment pattern because:
+- The human approves (not rejects) — semantically correct
+- Each question gets a proper form control (not free-text)
+- Answers are structured and reliably parseable
+- Works with any tracker backend (Jira users edit the YAML directly)
+
 ## CAO Integration
 
 To delegate work to a [CAO](https://github.com/awslabs/cli-agent-orchestrator/)

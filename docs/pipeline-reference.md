@@ -86,9 +86,92 @@ pipeline:
 | `prompt` | string | No | Path to prompt template file (optional) |
 | `depends_on` | list | No | Step IDs this step depends on (within or across phases) |
 | `hitl_after` | bool | No | Require human approval after completion (default: true) |
+| `hitl_fields` | list | No | Editable fields shown to the reviewer (see below) |
 | `type` | string | No | `task` (default) or `reviewer_step` |
 | `deliverables` | list | No | Expected output files |
 | `input_dependencies` | list | No | Files from previous phases needed as input |
+
+## HITL Editable Fields
+
+Steps can declare structured fields that a human reviewer can edit before
+approving. Field definitions and values are embedded in the ticket description
+as a YAML block, so the feature works with any tracker backend (SQLite, Jira,
+Gitea, etc.).
+
+```yaml
+steps:
+  - id: "project_setup"
+    name: "Project Configuration"
+    agent: "__noop__"
+    hitl_after: true
+    hitl_fields:
+      - name: "target_language"
+        label: "Target language for code generation"
+        type: "select"
+        options: ["Java", "C#", "Python"]
+        default: "Java"
+      - name: "calibration_run"
+        label: "Run calibration pass"
+        type: "boolean"
+        default: false
+      - name: "source_path"
+        label: "Path to legacy source"
+        type: "text"
+        default: "input/legacy"
+      - name: "max_pods"
+        label: "Max parallel pods"
+        type: "number"
+        default: 3
+```
+
+### Field Types
+
+| Type | Dashboard renders as | Value format |
+|------|---------------------|-------------|
+| `boolean` | Checkbox | `true` / `false` |
+| `text` | Text input | String |
+| `number` | Number input | Integer |
+| `select` | Dropdown | One of `options` |
+
+### How It Works
+
+1. When tickets are created, the field schema and default values are embedded
+   in the ticket description between `<!-- HITL_FIELDS_START -->` and
+   `<!-- HITL_FIELDS_END -->` markers as a fenced YAML block.
+
+2. In conductor's dashboard, the YAML block renders as a proper form
+   (checkboxes, dropdowns, text inputs). In Jira/Gitea, the reviewer edits
+   the YAML values directly in the ticket body.
+
+3. When the reviewer approves, the dashboard updates the YAML block with the
+   form values. Agents read the values via `parse_hitl_fields(ticket.description)`.
+
+4. The context assembler automatically injects HITL field values into the
+   agent's prompt under a "Human Clarifications" section.
+
+### Agent-Generated Clarifications
+
+Agents can also generate HITL fields at runtime when they need human input.
+Return `clarifications` in the `ExecutionResult`:
+
+```python
+from conductor.models.phases import HitlFieldDefinition
+
+return ExecutionResult(
+    success=False,
+    summary="Need clarification on 2 items",
+    clarifications=[
+        HitlFieldDefinition(name="auth_type", label="Is auth LDAP or SAML?",
+                            type="select", options=["LDAP", "SAML"]),
+        HitlFieldDefinition(name="include_audit", label="Migrate audit tables?",
+                            type="boolean", default=False),
+    ],
+)
+```
+
+The watcher embeds the fields in the ticket description and transitions to
+`AWAITING_REVIEW`. After the human fills in the form and approves, the agent
+re-runs with the answers injected into its prompt context.
 
 ## Deliverable Fields
 

@@ -122,6 +122,11 @@ class EventWatcher:
             print(f"  ✗ Agent failed with exception: {e}")
             return
 
+        # Agent needs clarification — embed fields and await human
+        if result.clarifications:
+            self._handle_clarifications(ticket, result)
+            return
+
         if result.success:
             self._handle_success(ticket, result, executor, context)
         else:
@@ -130,6 +135,41 @@ class EventWatcher:
                 ticket.id, f"Agent failed: {result.error or result.summary}"
             )
             print(f"  ✗ Agent failed: {result.error or result.summary}")
+
+    def _handle_clarifications(
+        self, ticket: Ticket, result: ExecutionResult
+    ) -> None:
+        """Agent returned clarification questions — embed as HITL fields."""
+        from conductor.context.hitl_fields import (
+            build_hitl_fields_block,
+            has_hitl_fields,
+            update_hitl_fields,
+        )
+
+        # Build the HITL fields block from the agent's questions
+        fields_block = build_hitl_fields_block(result.clarifications)
+
+        # Append to (or replace in) the ticket description
+        description = ticket.description or ""
+        if has_hitl_fields(description):
+            # Replace existing block with new questions
+            new_values = {f.name: f.default for f in result.clarifications}
+            description = update_hitl_fields(description, new_values)
+        else:
+            description += fields_block
+
+        self.tracker.update_description(ticket.id, description)
+
+        # Add summary as comment
+        if result.summary:
+            self.tracker.add_comment(ticket.id, result.summary[:2000])
+
+        # Transition to AWAITING_REVIEW
+        self.tracker.update_status(ticket.id, TicketStatus.AWAITING_REVIEW)
+        print(
+            f"  ? Agent needs clarification "
+            f"({len(result.clarifications)} questions) → AWAITING_REVIEW"
+        )
 
     def _handle_success(
         self,
