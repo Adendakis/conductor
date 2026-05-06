@@ -53,6 +53,17 @@ def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
     # Resolve project root from db_path (db is at .conductor/tracker.db)
     _project_root = Path(db_path).parent.parent
 
+    # Load project title from project-config.json or .conductor/config.yaml
+    _dashboard_title = "Conductor"
+    _project_config_path = _project_root / "project-config.json"
+    if _project_config_path.exists():
+        import json as _json
+        try:
+            _pc = _json.loads(_project_config_path.read_text(encoding="utf-8"))
+            _dashboard_title = _pc.get("dashboardTitle", _pc.get("projectName", "Conductor"))
+        except Exception:
+            pass
+
     @app.get("/logo")
     async def logo():
         """Serve project logo if exists, else default conductor logo."""
@@ -76,7 +87,7 @@ def create_app(db_path: str = ".conductor/tracker.db") -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def board_page(request: Request):
         """Kanban board view."""
-        return templates.TemplateResponse("board.html", {"request": request})
+        return templates.TemplateResponse("board.html", {"request": request, "title": _dashboard_title})
 
     @app.get("/ticket/{ticket_id}", response_class=HTMLResponse)
     async def ticket_page(request: Request, ticket_id: str):

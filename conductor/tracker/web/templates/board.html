@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Conductor — Board</title>
+  <title>{{ title }} — Board</title>
+  <link rel="icon" href="/logo" type="image/png">
   <link rel="stylesheet" href="/static/style.css?v=4">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 </head>
@@ -11,7 +12,7 @@
   <div class="header">
     <div style="display:flex; align-items:center; gap:10px;">
       <img src="/logo" alt="Logo" style="height:64px;" onerror="this.style.display='none'">
-      <h1>Conductor</h1>
+      <h1>{{ title }}</h1>
     </div>
     <div class="stats" hx-get="/api/stats" hx-trigger="load, every 10s" hx-swap="innerHTML">
       Loading...
